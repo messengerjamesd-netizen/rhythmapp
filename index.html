@@ -29,6 +29,14 @@
       </div>
 
       <div class="field">
+        <label>Input Mode</label>
+        <div class="mode-toggle">
+          <button id="mode-mic" class="mode-btn active">🎤 Microphone</button>
+          <button id="mode-space" class="mode-btn">⌨️ Spacebar</button>
+        </div>
+      </div>
+
+      <div class="field" id="mic-controls">
         <label for="threshold-slider">
           Mic Sensitivity
           <span class="hint">(lower = more sensitive)</span>
@@ -77,8 +85,9 @@
     <div class="indicators">
       <div id="beat-indicator" class="hidden" title="Metronome beat">🎵</div>
       <span class="indicator-label hidden" id="beat-label">Beat</span>
-      <div id="clap-indicator" class="hidden" title="Detected clap">👏</div>
-      <span class="indicator-label hidden" id="clap-label">Clap detected</span>
+      <div id="clap-indicator" class="hidden" title="Detected input">👏</div>
+      <span class="indicator-label hidden" id="clap-label">Detected</span>
+      <span class="indicator-label hidden spacebar-hint" id="spacebar-hint">— press <kbd>Space</kbd></span>
     </div>
   </section>
 

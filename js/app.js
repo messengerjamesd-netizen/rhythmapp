@@ -55,6 +55,12 @@ const CALIB_PATTERN = [
 ];
 const CALIB_TIMESIG = { beats: 4, value: 4 };
 
+// ── Input mode ────────────────────────────────────────────────────────────────
+
+let inputMode = localStorage.getItem("rhythmapp_input_mode") || "mic"; // "mic" | "space"
+let lastSpaceMs = -Infinity;
+const SPACE_DEBOUNCE = 150;
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const bpmInput        = document.getElementById("bpm-input");
@@ -62,6 +68,10 @@ const startBtn        = document.getElementById("start-btn");
 const playbackBtn     = document.getElementById("playback-btn");
 const calibrateBtn    = document.getElementById("calibrate-btn");
 const offsetDisplay   = document.getElementById("offset-display");
+const modeMicBtn      = document.getElementById("mode-mic");
+const modeSpaceBtn    = document.getElementById("mode-space");
+const micControls     = document.getElementById("mic-controls");
+const spacebarHint    = document.getElementById("spacebar-hint");
 const rhythmSel       = document.getElementById("rhythm-selector");
 const staffCanvas     = document.getElementById("staff-canvas");
 const blockViz        = document.getElementById("rhythm-blocks");
@@ -101,7 +111,24 @@ startBtn.addEventListener("click",     onStartClick);
 playbackBtn.addEventListener("click",  onPlaybackClick);
 calibrateBtn.addEventListener("click", onCalibrateClick);
 
+modeMicBtn.addEventListener("click",   () => setInputMode("mic"));
+modeSpaceBtn.addEventListener("click", () => setInputMode("space"));
+
+// Global spacebar listener — only fires during recording, prevents page scroll
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Space") return;
+  if (state !== STATE.RECORDING && state !== STATE.CALIBRATING) return;
+  if (inputMode !== "space") return;
+  e.preventDefault();
+  const now = performance.now();
+  if (now - lastSpaceMs < SPACE_DEBOUNCE) return;
+  lastSpaceMs = now;
+  clapTimestamps.push(now - sequenceStartMs);
+  flashClap(clapIndicator);
+});
+
 updateOffsetDisplay();
+applyInputMode(); // restore saved mode on load
 
 // Re-render staff on window resize (canvas must match container width)
 window.addEventListener("resize", () => {
@@ -110,6 +137,23 @@ window.addEventListener("resize", () => {
 
 function getBpm() {
   return Math.max(20, Math.min(300, parseInt(bpmInput.value, 10) || 80));
+}
+
+// ── Input mode ────────────────────────────────────────────────────────────────
+
+function setInputMode(mode) {
+  inputMode = mode;
+  localStorage.setItem("rhythmapp_input_mode", mode);
+  applyInputMode();
+}
+
+function applyInputMode() {
+  const isMic = inputMode === "mic";
+  modeMicBtn.classList.toggle("active",   isMic);
+  modeSpaceBtn.classList.toggle("active", !isMic);
+  micControls.style.display  = isMic ? "" : "none";
+  calibrateBtn.style.display = isMic ? "" : "none";
+  offsetDisplay.style.display = isMic ? "" : "none";
 }
 
 // ── AudioContext (created on first user gesture) ──────────────────────────────
@@ -133,16 +177,17 @@ async function onStartClick() {
   if (state === STATE.PLAYBACK) stopPlayback();
 
   ensureAudioCtx();
-  setState(STATE.REQUESTING_MIC);
 
-  if (!audioInput) audioInput = new AudioInput(audioCtx);
-
-  try {
-    await audioInput.requestMic();
-  } catch {
-    setStatus(statusEl, "Microphone access denied — please allow mic access and try again.", "error");
-    setState(STATE.IDLE);
-    return;
+  if (inputMode === "mic") {
+    setState(STATE.REQUESTING_MIC);
+    if (!audioInput) audioInput = new AudioInput(audioCtx);
+    try {
+      await audioInput.requestMic();
+    } catch {
+      setStatus(statusEl, "Microphone access denied — please allow mic access and try again.", "error");
+      setState(STATE.IDLE);
+      return;
+    }
   }
 
   startCountdown();
@@ -226,12 +271,15 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
   sequenceStartMs     = rhythmStartPerf;
   lastTotalDurationMs = totalDuration;
 
+  lastSpaceMs = -Infinity; // reset spacebar debounce for new session
   setState(STATE.RECORDING);
 
-  audioInput.start((absoluteMs) => {
-    clapTimestamps.push(absoluteMs - sequenceStartMs);
-    flashClap(clapIndicator);
-  });
+  if (inputMode === "mic") {
+    audioInput.start((absoluteMs) => {
+      clapTimestamps.push(absoluteMs - sequenceStartMs);
+      flashClap(clapIndicator);
+    });
+  }
 
   // Pass the same audio-clock anchor so the metronome starts on beat 1
   // with no gap from the count-in — it's a seamless continuation
@@ -250,7 +298,7 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
 }
 
 function finishRecording() {
-  audioInput.stop();
+  if (inputMode === "mic" && audioInput) audioInput.stop();
   timingEngine.stop();
 
   if (isCalibrating) {
@@ -359,12 +407,16 @@ function stopPlayback() {
 function setState(newState) {
   state = newState;
 
+  const recordingMsg = inputMode === "space"
+    ? "Press spacebar on every beat! Press Stop when done."
+    : "Clap along! Press Stop when done.";
+
   const messages = {
     [STATE.IDLE]:           ["Select a rhythm and press Start.", ""],
     [STATE.REQUESTING_MIC]: ["Requesting microphone access…", "info"],
     [STATE.COUNTDOWN]:      ["Get ready…", "info"],
     [STATE.CALIBRATING]:    ["Clap with every beat to calibrate…", "recording"],
-    [STATE.RECORDING]:      ["Clap along! Press Stop when done.", "recording"],
+    [STATE.RECORDING]:      [recordingMsg, "recording"],
     [STATE.RESULTS]:        ["Done! See your results below.", "success"],
     [STATE.PLAYBACK]:       ["Playing back the correct rhythm…", "info"],
   };
@@ -374,8 +426,8 @@ function setState(newState) {
 
   const busy = newState === STATE.COUNTDOWN || newState === STATE.REQUESTING_MIC
             || newState === STATE.CALIBRATING;
-  startBtn.textContent = newState === STATE.RECORDING ? "⏹ Stop" : "▶ Start";
-  startBtn.disabled    = busy;
+  startBtn.textContent  = newState === STATE.RECORDING ? "⏹ Stop" : "▶ Start";
+  startBtn.disabled     = busy;
   calibrateBtn.disabled = busy || newState === STATE.RECORDING;
 
   if (newState === STATE.RESULTS) playbackBtn.textContent = "▶ Play Correct Rhythm";
@@ -388,6 +440,8 @@ function setState(newState) {
   clapIndicator.classList.toggle("hidden", !isActive);
   beatLabel.classList.toggle("hidden",     !isActive);
   clapLabel.classList.toggle("hidden",     !isActive);
+  // Show spacebar hint only in spacebar mode while active
+  if (spacebarHint) spacebarHint.classList.toggle("hidden", !(isActive && inputMode === "space"));
 
   resultsSection.style.display =
     (newState === STATE.RESULTS || newState === STATE.PLAYBACK) ? "" : "none";

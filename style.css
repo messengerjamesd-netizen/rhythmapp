@@ -153,6 +153,41 @@ input[type="range"] {
 .btn-ghost:hover:not(:disabled) { color: var(--text); background: var(--surface2); }
 .btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* ── Input mode toggle ────────────────────────────────────────── */
+.mode-toggle {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #3a3d55;
+}
+
+.mode-btn {
+  background: var(--surface2);
+  border: none;
+  color: var(--muted);
+  padding: 7px 14px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.mode-btn + .mode-btn { border-left: 1px solid #3a3d55; }
+.mode-btn:hover  { color: var(--text); }
+.mode-btn.active { background: var(--accent); color: #fff; font-weight: 600; }
+
+/* ── Spacebar hint ────────────────────────────────────────────── */
+.spacebar-hint { color: var(--muted); font-size: 0.82rem; }
+kbd {
+  background: var(--surface2);
+  border: 1px solid #3a3d55;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.78rem;
+  font-family: var(--font);
+  color: var(--text);
+}
+
 /* ── Category tabs ────────────────────────────────────────────── */
 .category-tabs {
   display: flex;
