@@ -145,6 +145,14 @@ input[type="range"] {
 }
 .btn-secondary:hover { background: #2a2d45; }
 
+.btn-ghost {
+  background: none;
+  color: var(--muted);
+  border: 1px solid #3a3d55;
+}
+.btn-ghost:hover:not(:disabled) { color: var(--text); background: var(--surface2); }
+.btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* ── Category tabs ────────────────────────────────────────────── */
 .category-tabs {
   display: flex;
@@ -297,12 +305,39 @@ input[type="range"] {
   100% { transform: scale(1);   opacity: 1;   }
 }
 
-/* ── Status ───────────────────────────────────────────────────── */
+/* ── Status + offset row ──────────────────────────────────────── */
+.status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
 .status-text {
   font-size: 0.9rem;
   color: var(--muted);
-  margin-top: 12px;
   min-height: 1.3em;
+  flex: 1;
+}
+
+.offset-display {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+.offset-display.uncalibrated {
+  background: #2a2020;
+  color: #a07070;
+  border: 1px solid #5a3030;
+}
+.offset-display.calibrated {
+  background: #1a2a1a;
+  color: #70a070;
+  border: 1px solid #305030;
 }
 .status-text.error     { color: var(--red); }
 .status-text.info      { color: var(--accent); }

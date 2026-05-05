@@ -42,10 +42,14 @@
       <div class="field btn-field">
         <button id="start-btn"    class="btn btn-primary">▶ Start</button>
         <button id="playback-btn" class="btn btn-secondary" style="display:none">▶ Play Correct Rhythm</button>
+        <button id="calibrate-btn" class="btn btn-ghost">🎯 Calibrate Mic</button>
       </div>
 
     </div>
-    <p class="status-text" id="status-text">Select a rhythm below, set your BPM, then press Start.</p>
+    <div class="status-row">
+      <p class="status-text" id="status-text">Select a rhythm below, set your BPM, then press Start.</p>
+      <span id="offset-display" class="offset-display uncalibrated">Not calibrated</span>
+    </div>
   </section>
 
   <!-- ── Rhythm library ── -->

@@ -26,6 +26,7 @@ const STATE = {
   RECORDING:      "recording",
   RESULTS:        "results",
   PLAYBACK:       "playback",
+  CALIBRATING:    "calibrating",
 };
 
 let state = STATE.IDLE;
@@ -34,17 +35,33 @@ let timingEngine   = null;
 let audioInput     = null;
 let playbackEngine = null;
 
-let currentRhythm       = null;  // full rhythm object from library {name, timeSig, pattern}
-let clapTimestamps      = [];    // relative ms from sequence start
-let sequenceStartMs     = null;  // performance.now() at recording start
+let currentRhythm       = null;
+let clapTimestamps      = [];
+let sequenceStartMs     = null;
 let lastAnalysis        = null;
 let lastTotalDurationMs = 0;
+
+// Calibration: device mic latency offset in ms (positive = mic registers late).
+// Loaded from localStorage so it survives page reloads.
+let micOffsetMs = parseFloat(localStorage.getItem("rhythmapp_offset") || "0");
+let isCalibrating = false;
+
+// Simple 4-beat pattern used only during calibration
+const CALIB_PATTERN = [
+  { type: "note", duration: 1 },
+  { type: "note", duration: 1 },
+  { type: "note", duration: 1 },
+  { type: "note", duration: 1 },
+];
+const CALIB_TIMESIG = { beats: 4, value: 4 };
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const bpmInput        = document.getElementById("bpm-input");
 const startBtn        = document.getElementById("start-btn");
 const playbackBtn     = document.getElementById("playback-btn");
+const calibrateBtn    = document.getElementById("calibrate-btn");
+const offsetDisplay   = document.getElementById("offset-display");
 const rhythmSel       = document.getElementById("rhythm-selector");
 const staffCanvas     = document.getElementById("staff-canvas");
 const blockViz        = document.getElementById("rhythm-blocks");
@@ -80,8 +97,11 @@ thresholdSlider.addEventListener("input", () => {
   if (audioInput) audioInput.THRESHOLD = v;
 });
 
-startBtn.addEventListener("click",    onStartClick);
-playbackBtn.addEventListener("click", onPlaybackClick);
+startBtn.addEventListener("click",     onStartClick);
+playbackBtn.addEventListener("click",  onPlaybackClick);
+calibrateBtn.addEventListener("click", onCalibrateClick);
+
+updateOffsetDisplay();
 
 // Re-render staff on window resize (canvas must match container width)
 window.addEventListener("resize", () => {
@@ -129,11 +149,12 @@ async function onStartClick() {
 }
 
 function startCountdown() {
-  setState(STATE.COUNTDOWN);
+  setState(isCalibrating ? STATE.CALIBRATING : STATE.COUNTDOWN);
   const bpm          = getBpm();
   const beatSec      = 60 / bpm;
   const beatMs       = beatSec * 1000;
-  const beatsPerBar  = currentRhythm.timeSig.beats;
+  const activeTimeSig = isCalibrating ? CALIB_TIMESIG : currentRhythm.timeSig;
+  const beatsPerBar  = activeTimeSig.beats;
 
   ensureAudioCtx();
 
@@ -195,8 +216,10 @@ function scheduleCountClick(audioTime, accent = false) {
 
 function startRecording(rhythmStartAudio, rhythmStartPerf) {
   const bpm = getBpm();
-  const { beats, totalDuration } = rhythmToTimestamps(currentRhythm.pattern, bpm);
-  const quarterBeats = totalBeats(currentRhythm.pattern);
+  const activePattern = isCalibrating ? CALIB_PATTERN : currentRhythm.pattern;
+  const activeTimeSig = isCalibrating ? CALIB_TIMESIG : currentRhythm.timeSig;
+  const { beats, totalDuration } = rhythmToTimestamps(activePattern, bpm);
+  const quarterBeats = totalBeats(activePattern);
 
   clapTimestamps = [];
   // Anchor clap timestamps to the exact moment beat 1 is scheduled to sound
@@ -217,12 +240,12 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
     quarterBeats,
     () => flashBeat(beatIndicator),
     rhythmStartAudio,
-    currentRhythm.timeSig.beats
+    activeTimeSig.beats
   );
 
   // Auto-stop after rhythm completes + small buffer
   setTimeout(() => {
-    if (state === STATE.RECORDING) finishRecording();
+    if (state === STATE.RECORDING || state === STATE.CALIBRATING) finishRecording();
   }, totalDuration + 600);
 }
 
@@ -230,12 +253,86 @@ function finishRecording() {
   audioInput.stop();
   timingEngine.stop();
 
+  if (isCalibrating) {
+    isCalibrating = false;
+    finishCalibration();
+    return;
+  }
+
+  // Apply mic offset: if mic registers late by X ms, shift claps back by X ms
+  const adjustedClaps = clapTimestamps.map((t) => t - micOffsetMs);
   const { beats } = rhythmToTimestamps(currentRhythm.pattern, getBpm());
-  lastAnalysis = analyzePerformance(beats, clapTimestamps);
+  lastAnalysis = analyzePerformance(beats, adjustedClaps);
 
   setState(STATE.RESULTS);
   renderResults(resultsEl, lastAnalysis, lastTotalDurationMs);
   playbackBtn.style.display = "";
+}
+
+// ── Calibration ───────────────────────────────────────────────────────────────
+
+async function onCalibrateClick() {
+  if (state !== STATE.IDLE && state !== STATE.RESULTS) return;
+
+  ensureAudioCtx();
+  if (!audioInput) audioInput = new AudioInput(audioCtx);
+
+  try {
+    await audioInput.requestMic();
+  } catch {
+    setStatus(statusEl, "Microphone access denied — please allow mic access and try again.", "error");
+    return;
+  }
+
+  isCalibrating = true;
+  startCountdown();   // reuses the normal countdown → recording flow
+}
+
+function finishCalibration() {
+  const bpm = getBpm();
+  const { beats } = rhythmToTimestamps(CALIB_PATTERN, bpm);
+
+  // Match each expected beat to the nearest clap and collect offsets
+  const offsets = [];
+  beats.forEach((beat) => {
+    let nearest = null;
+    let nearestDist = Infinity;
+    clapTimestamps.forEach((t) => {
+      const dist = Math.abs(t - beat.time);
+      if (dist < nearestDist) { nearestDist = dist; nearest = t; }
+    });
+    // Only count claps within a generous ±400ms window
+    if (nearest !== null && nearestDist < 400) {
+      offsets.push(nearest - beat.time);
+    }
+  });
+
+  if (offsets.length >= 2) {
+    // Use median to ignore outliers (e.g. a stray extra clap)
+    offsets.sort((a, b) => a - b);
+    micOffsetMs = offsets[Math.floor(offsets.length / 2)];
+    localStorage.setItem("rhythmapp_offset", String(micOffsetMs));
+    updateOffsetDisplay();
+    setStatus(statusEl,
+      `Calibrated! Mic offset set to ${micOffsetMs > 0 ? "+" : ""}${Math.round(micOffsetMs)}ms. You're ready to practice.`,
+      "success"
+    );
+  } else {
+    setStatus(statusEl, "Calibration needs at least 2 matched claps — try again.", "error");
+  }
+
+  setState(STATE.IDLE);
+}
+
+function updateOffsetDisplay() {
+  if (!offsetDisplay) return;
+  if (micOffsetMs === 0) {
+    offsetDisplay.textContent = "Not calibrated";
+    offsetDisplay.className   = "offset-display uncalibrated";
+  } else {
+    offsetDisplay.textContent = `Mic offset: ${micOffsetMs > 0 ? "+" : ""}${Math.round(micOffsetMs)}ms`;
+    offsetDisplay.className   = "offset-display calibrated";
+  }
 }
 
 // ── Playback ──────────────────────────────────────────────────────────────────
@@ -266,6 +363,7 @@ function setState(newState) {
     [STATE.IDLE]:           ["Select a rhythm and press Start.", ""],
     [STATE.REQUESTING_MIC]: ["Requesting microphone access…", "info"],
     [STATE.COUNTDOWN]:      ["Get ready…", "info"],
+    [STATE.CALIBRATING]:    ["Clap with every beat to calibrate…", "recording"],
     [STATE.RECORDING]:      ["Clap along! Press Stop when done.", "recording"],
     [STATE.RESULTS]:        ["Done! See your results below.", "success"],
     [STATE.PLAYBACK]:       ["Playing back the correct rhythm…", "info"],
@@ -274,19 +372,22 @@ function setState(newState) {
   const [msg, type] = messages[newState] || ["", ""];
   setStatus(statusEl, msg, type);
 
+  const busy = newState === STATE.COUNTDOWN || newState === STATE.REQUESTING_MIC
+            || newState === STATE.CALIBRATING;
   startBtn.textContent = newState === STATE.RECORDING ? "⏹ Stop" : "▶ Start";
-  startBtn.disabled    = newState === STATE.COUNTDOWN || newState === STATE.REQUESTING_MIC;
+  startBtn.disabled    = busy;
+  calibrateBtn.disabled = busy || newState === STATE.RECORDING;
 
   if (newState === STATE.RESULTS) playbackBtn.textContent = "▶ Play Correct Rhythm";
   if (newState !== STATE.RESULTS && newState !== STATE.PLAYBACK) {
     playbackBtn.style.display = "none";
   }
 
-  const isRecording = newState === STATE.RECORDING;
-  beatIndicator.classList.toggle("hidden", !isRecording);
-  clapIndicator.classList.toggle("hidden", !isRecording);
-  beatLabel.classList.toggle("hidden",     !isRecording);
-  clapLabel.classList.toggle("hidden",     !isRecording);
+  const isActive = newState === STATE.RECORDING || newState === STATE.CALIBRATING;
+  beatIndicator.classList.toggle("hidden", !isActive);
+  clapIndicator.classList.toggle("hidden", !isActive);
+  beatLabel.classList.toggle("hidden",     !isActive);
+  clapLabel.classList.toggle("hidden",     !isActive);
 
   resultsSection.style.display =
     (newState === STATE.RESULTS || newState === STATE.PLAYBACK) ? "" : "none";
