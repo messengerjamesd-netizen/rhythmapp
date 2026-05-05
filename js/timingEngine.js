@@ -15,13 +15,14 @@ export class TimingEngine {
    * lookahead: how far ahead to schedule (ms)
    * scheduleInterval: how often the scheduler runs (ms)
    */
-  start(bpm, totalBeatCount, onTick, startAudioTime) {
+  start(bpm, totalBeatCount, onTick, startAudioTime, beatsPerBar = 4) {
     this._running = true;
     this._onTick = onTick;
     this._bpm = bpm;
     this._msPerBeat = (60 / bpm) * 1000;
-    this._startAudioTime = startAudioTime; // AudioContext time at sequence start
+    this._startAudioTime = startAudioTime;
     this._totalBeats = totalBeatCount;
+    this._beatsPerBar = beatsPerBar;
     this._lookahead = 0.1;       // seconds ahead to schedule audio
     this._scheduleInterval = 25; // ms between scheduler runs
     this._nextBeat = 0;
@@ -75,7 +76,7 @@ export class TimingEngine {
     const ctx = this.audioCtx;
 
     // Accent beat 0 of each bar (every 4 quarter-note beats)
-    const isAccent = Math.round(beatIndex) % 4 === 0;
+    const isAccent = Math.round(beatIndex) % this._beatsPerBar === 0;
 
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();

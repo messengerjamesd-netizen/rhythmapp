@@ -1,47 +1,100 @@
 // ui.js — all DOM rendering; zero audio/timing logic here
 
-import { RHYTHMS } from "./rhythmEngine.js";
+import { RHYTHM_LIBRARY } from "./rhythmLibrary.js";
 import { gradeLabel } from "./analysisEngine.js";
+import { renderStaff } from "./staffRenderer.js";
 
-// ── Rhythm selector ──────────────────────────────────────────────────────────
+// ── Rhythm selector (categories + tabs) ──────────────────────────────────────
 
-export function buildRhythmSelector(container, onChange) {
+let _staffCanvas = null;
+
+export function buildRhythmSelector(container, staffCanvas, onChange) {
+  _staffCanvas = staffCanvas;
   container.innerHTML = "";
-  Object.keys(RHYTHMS).forEach((name) => {
-    const btn = document.createElement("button");
-    btn.className = "rhythm-btn";
-    btn.textContent = name;
-    btn.dataset.name = name;
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".rhythm-btn").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      onChange(name, RHYTHMS[name]);
+
+  const categories = Object.keys(RHYTHM_LIBRARY);
+
+  // Tab bar
+  const tabBar = document.createElement("div");
+  tabBar.className = "category-tabs";
+
+  // Panel area
+  const panelWrap = document.createElement("div");
+  panelWrap.className = "category-panels";
+
+  let firstBtn  = null;
+  let firstPanel = null;
+
+  categories.forEach((cat) => {
+    // Tab button
+    const tab = document.createElement("button");
+    tab.className = "cat-tab";
+    tab.textContent = cat;
+    tab.dataset.cat = cat;
+    tabBar.appendChild(tab);
+
+    // Panel
+    const panel = document.createElement("div");
+    panel.className = "cat-panel";
+    panel.dataset.cat = cat;
+    panel.hidden = true;
+
+    RHYTHM_LIBRARY[cat].forEach((rhythm) => {
+      const btn = document.createElement("button");
+      btn.className = "rhythm-btn";
+      btn.textContent = rhythm.name;
+      btn.dataset.name = rhythm.name;
+      btn.addEventListener("click", () => {
+        // Deselect all rhythm buttons
+        container.querySelectorAll(".rhythm-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        onChange(rhythm);
+      });
+      panel.appendChild(btn);
     });
-    container.appendChild(btn);
+
+    panelWrap.appendChild(panel);
+
+    tab.addEventListener("click", () => {
+      // Switch active tab
+      tabBar.querySelectorAll(".cat-tab").forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      panelWrap.querySelectorAll(".cat-panel").forEach((p) => { p.hidden = true; });
+      panel.hidden = false;
+    });
+
+    if (!firstBtn) { firstBtn = tab; firstPanel = panel; }
   });
-  // Select first by default
-  container.querySelector(".rhythm-btn").click();
+
+  container.appendChild(tabBar);
+  container.appendChild(panelWrap);
+
+  // Activate first tab and first rhythm
+  firstBtn.classList.add("active");
+  firstPanel.hidden = false;
+  firstPanel.querySelector(".rhythm-btn").click();
 }
 
-// ── Rhythm visualization ─────────────────────────────────────────────────────
+// ── Staff notation rendering ──────────────────────────────────────────────────
 
-/**
- * Draw rhythm blocks. Each event is a proportional-width box.
- * Notes are filled; rests are empty/hatched.
- */
-export function renderRhythm(container, pattern, bpm) {
+export function updateStaff(pattern, timeSig) {
+  if (!_staffCanvas) return;
+  renderStaff(_staffCanvas, pattern, timeSig);
+}
+
+// ── Beat block visualization (kept as secondary reference below staff) ────────
+
+export function renderBlocks(container, pattern, bpm) {
   container.innerHTML = "";
   const msPerBeat = (60 / bpm) * 1000;
-  const totalMs = pattern.reduce((s, e) => s + e.duration * msPerBeat, 0);
+  const totalMs   = pattern.reduce((s, e) => s + e.duration * msPerBeat, 0);
 
-  pattern.forEach((event, i) => {
+  pattern.forEach((event) => {
     const widthPct = (event.duration * msPerBeat / totalMs) * 100;
     const block = document.createElement("div");
     block.className = `rhythm-block ${event.type}`;
     block.style.width = `${widthPct}%`;
-    block.dataset.index = i;
 
-    // Label: note duration as fraction
     const label = document.createElement("span");
     label.className = "block-label";
     label.textContent = durationLabel(event.duration);
@@ -52,23 +105,20 @@ export function renderRhythm(container, pattern, bpm) {
 }
 
 function durationLabel(beats) {
-  if (beats === 2)   return "𝅗𝅥";   // half
-  if (beats === 1)   return "♩";   // quarter
-  if (beats === 1.5) return "♩.";  // dotted quarter
-  if (beats === 0.5) return "♪";   // eighth
-  if (beats === 0.25) return "𝅘𝅥𝅯"; // sixteenth
+  if (beats === 4)    return "𝅝";
+  if (beats === 2)    return "𝅗𝅥";
+  if (beats === 1)    return "♩";
+  if (beats === 1.5)  return "♩.";
+  if (beats === 0.75) return "♪.";
+  if (beats === 0.5)  return "♪";
+  if (beats === 0.25) return "𝅘𝅥𝅯";
   return beats;
 }
 
 // ── Metronome beat flash ──────────────────────────────────────────────────────
 
-export function flashBeat(indicatorEl, beatIndex, pattern) {
-  // Find which rhythm block this quarter-beat falls on and light it up
-  const blocks = document.querySelectorAll(".rhythm-block");
-  blocks.forEach((b) => b.classList.remove("active-beat"));
-
+export function flashBeat(indicatorEl) {
   indicatorEl.classList.remove("flash");
-  // Trigger reflow to restart CSS animation
   void indicatorEl.offsetWidth;
   indicatorEl.classList.add("flash");
 }
@@ -85,7 +135,7 @@ export function flashClap(el) {
 
 export function setStatus(el, text, type = "") {
   el.textContent = text;
-  el.className = "status-text";
+  el.className   = "status-text";
   if (type) el.classList.add(type);
 }
 
@@ -122,7 +172,7 @@ export function renderResults(container, analysis, totalDurationMs) {
   results.forEach((r, i) => {
     const item = document.createElement("div");
     item.className = `breakdown-item ${r.classification}`;
-    const icon = { correct: "✓", early: "↑", late: "↓", missed: "✗" }[r.classification];
+    const icon      = { correct: "✓", early: "↑", late: "↓", missed: "✗" }[r.classification];
     const errorText = r.error !== null
       ? `${r.error > 0 ? "+" : ""}${Math.round(r.error)}ms`
       : "—";
@@ -139,21 +189,17 @@ export function renderResults(container, analysis, totalDurationMs) {
   // Timeline visualization
   const timelineWrap = document.createElement("div");
   timelineWrap.className = "timeline-wrap";
-  timelineWrap.innerHTML = "<div class='timeline-label'>Timeline (expected ▲ vs actual ●)</div>";
+  timelineWrap.innerHTML = "<div class='timeline-label'>Timeline — ▲ expected &nbsp; ● actual clap</div>";
 
-  const canvas = document.createElement("canvas");
+  const canvas    = document.createElement("canvas");
   canvas.className = "timeline-canvas";
-  canvas.width = 600;
-  canvas.height = 80;
   timelineWrap.appendChild(canvas);
   container.appendChild(timelineWrap);
 
-  // Draw after DOM insertion (requestAnimationFrame ensures canvas is sized)
   requestAnimationFrame(() =>
     drawTimeline(canvas, results, extraClaps, totalDurationMs, toleranceMs)
   );
 
-  // Extra claps note
   if (extraClaps.length > 0) {
     const extra = document.createElement("p");
     extra.className = "extra-claps-note";
@@ -163,16 +209,24 @@ export function renderResults(container, analysis, totalDurationMs) {
 }
 
 function drawTimeline(canvas, results, extraClaps, totalMs, toleranceMs) {
-  const ctx = canvas.getContext("2d");
-  const W = canvas.width;
-  const H = canvas.height;
+  const dpr = window.devicePixelRatio || 1;
+  const W   = canvas.parentElement ? canvas.parentElement.clientWidth : 600;
+  const H   = 80;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + "px";
+  canvas.style.height = H + "px";
+
+  const ctx  = canvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+
   const toX = (ms) => (ms / totalMs) * (W - 20) + 10;
 
   ctx.clearRect(0, 0, W, H);
 
   // Baseline
   ctx.strokeStyle = "#444";
-  ctx.lineWidth = 1;
+  ctx.lineWidth   = 1;
   ctx.beginPath();
   ctx.moveTo(10, H / 2);
   ctx.lineTo(W - 10, H / 2);
@@ -180,13 +234,13 @@ function drawTimeline(canvas, results, extraClaps, totalMs, toleranceMs) {
 
   // Tolerance bands
   results.forEach((r) => {
-    const x = toX(r.expected);
+    const x    = toX(r.expected);
     const tolW = (toleranceMs / totalMs) * (W - 20);
     ctx.fillStyle = "rgba(100,200,100,0.15)";
     ctx.fillRect(x - tolW, H / 2 - 14, tolW * 2, 28);
   });
 
-  // Expected beats (triangles)
+  // Expected beats (triangles above line)
   results.forEach((r) => {
     const x = toX(r.expected);
     ctx.fillStyle = "#7eb8f7";
@@ -198,7 +252,7 @@ function drawTimeline(canvas, results, extraClaps, totalMs, toleranceMs) {
     ctx.fill();
   });
 
-  // Actual claps (circles), color-coded
+  // Actual claps (circles below line), color-coded
   const colorMap = { correct: "#4caf50", early: "#ff9800", late: "#e53935", missed: "#888" };
   results.forEach((r) => {
     if (r.actual === null) return;
@@ -209,13 +263,12 @@ function drawTimeline(canvas, results, extraClaps, totalMs, toleranceMs) {
     ctx.fill();
   });
 
-  // Extra claps (grey circles below)
+  // Extra claps (grey, smaller)
   extraClaps.forEach((t) => {
-    const relT = t - (results[0]?.expected ?? 0);
-    const x = toX(Math.max(0, Math.min(totalMs, relT + (results[0]?.expected ?? 0))));
-    ctx.fillStyle = "#666";
+    const x = toX(Math.max(0, Math.min(totalMs, t)));
+    ctx.fillStyle = "#555";
     ctx.beginPath();
-    ctx.arc(x, H / 2 + 14, 5, 0, Math.PI * 2);
+    ctx.arc(x, H / 2 + 14, 4, 0, Math.PI * 2);
     ctx.fill();
   });
 }

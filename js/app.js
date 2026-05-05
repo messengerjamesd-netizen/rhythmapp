@@ -1,13 +1,14 @@
 // app.js — state machine and module wiring
 
-import { RHYTHMS, rhythmToTimestamps, totalBeats } from "./rhythmEngine.js";
-import { TimingEngine } from "./timingEngine.js";
-import { AudioInput } from "./audioInput.js";
+import { rhythmToTimestamps, totalBeats } from "./rhythmEngine.js";
+import { TimingEngine }   from "./timingEngine.js";
+import { AudioInput }     from "./audioInput.js";
 import { PlaybackEngine } from "./playback.js";
 import { analyzePerformance } from "./analysisEngine.js";
 import {
   buildRhythmSelector,
-  renderRhythm,
+  updateStaff,
+  renderBlocks,
   flashBeat,
   flashClap,
   setStatus,
@@ -19,57 +20,58 @@ import {
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const STATE = {
-  IDLE: "idle",
+  IDLE:           "idle",
   REQUESTING_MIC: "requesting_mic",
-  COUNTDOWN: "countdown",
-  RECORDING: "recording",
-  RESULTS: "results",
-  PLAYBACK: "playback",
+  COUNTDOWN:      "countdown",
+  RECORDING:      "recording",
+  RESULTS:        "results",
+  PLAYBACK:       "playback",
 };
 
 let state = STATE.IDLE;
-let audioCtx = null;
-let timingEngine = null;
-let audioInput = null;
+let audioCtx       = null;
+let timingEngine   = null;
+let audioInput     = null;
 let playbackEngine = null;
 
-let currentPattern = null;
-let currentPatternName = "";
-let clapTimestamps = [];   // relative ms from sequence start
-let sequenceStartMs = null; // performance.now() at the moment recording started
-let lastAnalysis = null;
+let currentRhythm       = null;  // full rhythm object from library {name, timeSig, pattern}
+let clapTimestamps      = [];    // relative ms from sequence start
+let sequenceStartMs     = null;  // performance.now() at recording start
+let lastAnalysis        = null;
 let lastTotalDurationMs = 0;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
-const bpmInput       = document.getElementById("bpm-input");
-const startBtn       = document.getElementById("start-btn");
-const playbackBtn    = document.getElementById("playback-btn");
-const rhythmSel      = document.getElementById("rhythm-selector");
-const rhythmViz      = document.getElementById("rhythm-viz");
-const beatIndicator  = document.getElementById("beat-indicator");
-const clapIndicator  = document.getElementById("clap-indicator");
-const beatLabel      = document.getElementById("beat-label");
-const clapLabel      = document.getElementById("clap-label");
-const countdownEl    = document.getElementById("countdown");
-const statusEl       = document.getElementById("status-text");
-const resultsSection = document.getElementById("results-section");
-const resultsEl      = document.getElementById("results");
+const bpmInput        = document.getElementById("bpm-input");
+const startBtn        = document.getElementById("start-btn");
+const playbackBtn     = document.getElementById("playback-btn");
+const rhythmSel       = document.getElementById("rhythm-selector");
+const staffCanvas     = document.getElementById("staff-canvas");
+const blockViz        = document.getElementById("rhythm-blocks");
+const beatIndicator   = document.getElementById("beat-indicator");
+const clapIndicator   = document.getElementById("clap-indicator");
+const beatLabel       = document.getElementById("beat-label");
+const clapLabel       = document.getElementById("clap-label");
+const countdownEl     = document.getElementById("countdown");
+const statusEl        = document.getElementById("status-text");
+const resultsSection  = document.getElementById("results-section");
+const resultsEl       = document.getElementById("results");
 const thresholdSlider = document.getElementById("threshold-slider");
-const thresholdVal   = document.getElementById("threshold-val");
+const thresholdVal    = document.getElementById("threshold-val");
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-buildRhythmSelector(rhythmSel, (name, pattern) => {
-  currentPatternName = name;
-  currentPattern = pattern;
-  renderRhythm(rhythmViz, pattern, getBpm());
-  resultsEl.innerHTML = "";
-  playbackBtn.style.display = "none";
+buildRhythmSelector(rhythmSel, staffCanvas, (rhythm) => {
+  currentRhythm = rhythm;
+  updateStaff(rhythm.pattern, rhythm.timeSig);
+  renderBlocks(blockViz, rhythm.pattern, getBpm());
+  resultsEl.innerHTML    = "";
+  resultsSection.style.display = "none";
+  playbackBtn.style.display    = "none";
 });
 
 bpmInput.addEventListener("input", () => {
-  if (currentPattern) renderRhythm(rhythmViz, currentPattern, getBpm());
+  if (currentRhythm) renderBlocks(blockViz, currentRhythm.pattern, getBpm());
 });
 
 thresholdSlider.addEventListener("input", () => {
@@ -78,8 +80,13 @@ thresholdSlider.addEventListener("input", () => {
   if (audioInput) audioInput.THRESHOLD = v;
 });
 
-startBtn.addEventListener("click", onStartClick);
+startBtn.addEventListener("click",    onStartClick);
 playbackBtn.addEventListener("click", onPlaybackClick);
+
+// Re-render staff on window resize (canvas must match container width)
+window.addEventListener("resize", () => {
+  if (currentRhythm) updateStaff(currentRhythm.pattern, currentRhythm.timeSig);
+});
 
 function getBpm() {
   return Math.max(20, Math.min(300, parseInt(bpmInput.value, 10) || 80));
@@ -89,8 +96,8 @@ function getBpm() {
 
 function ensureAudioCtx() {
   if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    timingEngine = new TimingEngine(audioCtx);
+    audioCtx       = new (window.AudioContext || window.webkitAudioContext)();
+    timingEngine   = new TimingEngine(audioCtx);
     playbackEngine = new PlaybackEngine(audioCtx);
   }
   if (audioCtx.state === "suspended") audioCtx.resume();
@@ -103,21 +110,17 @@ async function onStartClick() {
     finishRecording();
     return;
   }
-  if (state === STATE.PLAYBACK) {
-    stopPlayback();
-  }
+  if (state === STATE.PLAYBACK) stopPlayback();
 
   ensureAudioCtx();
   setState(STATE.REQUESTING_MIC);
 
-  if (!audioInput) {
-    audioInput = new AudioInput(audioCtx);
-  }
+  if (!audioInput) audioInput = new AudioInput(audioCtx);
 
   try {
     await audioInput.requestMic();
-  } catch (err) {
-    setStatus(statusEl, "Microphone access denied. Please allow mic access and try again.", "error");
+  } catch {
+    setStatus(statusEl, "Microphone access denied — please allow mic access and try again.", "error");
     setState(STATE.IDLE);
     return;
   }
@@ -127,15 +130,15 @@ async function onStartClick() {
 
 function startCountdown() {
   setState(STATE.COUNTDOWN);
-  const bpm = getBpm();
+  const bpm    = getBpm();
   const beatMs = (60 / bpm) * 1000;
-  let count = 4;
+  let count = currentRhythm.timeSig.beats; // count in for one full bar
 
-  // Play a preparatory 4-beat count-in with metronome clicks
+  // Schedule count-in clicks
   ensureAudioCtx();
   const countStart = audioCtx.currentTime + 0.05;
-  for (let i = 0; i < 4; i++) {
-    scheduleCountClick(countStart + i * (beatMs / 1000));
+  for (let i = 0; i < currentRhythm.timeSig.beats; i++) {
+    scheduleCountClick(countStart + i * (beatMs / 1000), i === 0);
   }
 
   showCountdown(countdownEl, count);
@@ -151,61 +154,61 @@ function startCountdown() {
       setTimeout(() => {
         clearCountdown(countdownEl);
         startRecording();
-      }, Math.min(beatMs, 500));
+      }, Math.min(beatMs, 600));
     }
   }, beatMs);
 }
 
-function scheduleCountClick(audioTime) {
-  const ctx = audioCtx;
-  const osc = ctx.createOscillator();
+function scheduleCountClick(audioTime, accent = false) {
+  const ctx  = audioCtx;
+  const osc  = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.connect(gain);
   gain.connect(ctx.destination);
-  osc.frequency.value = 880;
-  gain.gain.setValueAtTime(0.3, audioTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audioTime + 0.05);
+  osc.frequency.value = accent ? 1100 : 880;
+  gain.gain.setValueAtTime(accent ? 0.4 : 0.25, audioTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioTime + 0.06);
   osc.start(audioTime);
-  osc.stop(audioTime + 0.06);
+  osc.stop(audioTime + 0.07);
 }
 
 function startRecording() {
   const bpm = getBpm();
-  const { beats, totalDuration } = rhythmToTimestamps(currentPattern, bpm);
-  const quarterBeats = totalBeats(currentPattern);
+  const { beats, totalDuration } = rhythmToTimestamps(currentRhythm.pattern, bpm);
+  const quarterBeats = totalBeats(currentRhythm.pattern);
 
-  clapTimestamps = [];
-  sequenceStartMs = performance.now();
+  clapTimestamps      = [];
+  sequenceStartMs     = performance.now();
   lastTotalDurationMs = totalDuration;
 
   setState(STATE.RECORDING);
 
-  // Start audio input
   audioInput.start((absoluteMs) => {
-    // Convert absolute performance.now() timestamp → relative ms from sequence start
-    const relativeMs = absoluteMs - sequenceStartMs;
-    clapTimestamps.push(relativeMs);
+    // Convert absolute timestamp to relative ms from sequence start
+    clapTimestamps.push(absoluteMs - sequenceStartMs);
     flashClap(clapIndicator);
   });
 
-  // Start metronome — pass AudioContext time for sample-accurate scheduling
   const audioStartTime = audioCtx.currentTime + 0.01;
-  timingEngine.start(bpm, quarterBeats, (beatIdx) => {
-    flashBeat(beatIndicator, beatIdx, currentPattern);
-  }, audioStartTime);
+  timingEngine.start(
+    bpm,
+    quarterBeats,
+    () => flashBeat(beatIndicator),
+    audioStartTime,
+    currentRhythm.timeSig.beats
+  );
 
-  // Auto-stop after rhythm completes (+ small buffer)
+  // Auto-stop after rhythm completes + small buffer
   setTimeout(() => {
     if (state === STATE.RECORDING) finishRecording();
-  }, totalDuration + 500);
+  }, totalDuration + 600);
 }
 
 function finishRecording() {
   audioInput.stop();
   timingEngine.stop();
 
-  const bpm = getBpm();
-  const { beats } = rhythmToTimestamps(currentPattern, bpm);
+  const { beats } = rhythmToTimestamps(currentRhythm.pattern, getBpm());
   lastAnalysis = analyzePerformance(beats, clapTimestamps);
 
   setState(STATE.RESULTS);
@@ -217,16 +220,12 @@ function finishRecording() {
 
 function onPlaybackClick() {
   ensureAudioCtx();
-
-  if (state === STATE.PLAYBACK) {
-    stopPlayback();
-    return;
-  }
+  if (state === STATE.PLAYBACK) { stopPlayback(); return; }
 
   setState(STATE.PLAYBACK);
   playbackBtn.textContent = "⏹ Stop Playback";
 
-  playbackEngine.play(currentPattern, getBpm(), () => {
+  playbackEngine.play(currentRhythm.pattern, getBpm(), () => {
     if (state === STATE.PLAYBACK) setState(STATE.RESULTS);
   });
 }
@@ -241,8 +240,8 @@ function stopPlayback() {
 function setState(newState) {
   state = newState;
 
-  const statusMessages = {
-    [STATE.IDLE]:           ["Ready. Select a rhythm and press Start.", ""],
+  const messages = {
+    [STATE.IDLE]:           ["Select a rhythm and press Start.", ""],
     [STATE.REQUESTING_MIC]: ["Requesting microphone access…", "info"],
     [STATE.COUNTDOWN]:      ["Get ready…", "info"],
     [STATE.RECORDING]:      ["Clap along! Press Stop when done.", "recording"],
@@ -250,30 +249,23 @@ function setState(newState) {
     [STATE.PLAYBACK]:       ["Playing back the correct rhythm…", "info"],
   };
 
-  const [msg, type] = statusMessages[newState] || ["", ""];
+  const [msg, type] = messages[newState] || ["", ""];
   setStatus(statusEl, msg, type);
 
-  // Update start button label
-  startBtn.textContent =
-    newState === STATE.RECORDING ? "⏹ Stop Recording" : "▶ Start";
-  startBtn.disabled = newState === STATE.COUNTDOWN || newState === STATE.REQUESTING_MIC;
+  startBtn.textContent = newState === STATE.RECORDING ? "⏹ Stop" : "▶ Start";
+  startBtn.disabled    = newState === STATE.COUNTDOWN || newState === STATE.REQUESTING_MIC;
 
-  // Playback button
-  if (newState === STATE.RESULTS) {
-    playbackBtn.textContent = "▶ Play Correct Rhythm";
-  }
+  if (newState === STATE.RESULTS) playbackBtn.textContent = "▶ Play Correct Rhythm";
   if (newState !== STATE.RESULTS && newState !== STATE.PLAYBACK) {
     playbackBtn.style.display = "none";
   }
 
-  // Beat / clap indicator visibility
   const isRecording = newState === STATE.RECORDING;
   beatIndicator.classList.toggle("hidden", !isRecording);
   clapIndicator.classList.toggle("hidden", !isRecording);
-  beatLabel.classList.toggle("hidden", !isRecording);
-  clapLabel.classList.toggle("hidden", !isRecording);
+  beatLabel.classList.toggle("hidden",     !isRecording);
+  clapLabel.classList.toggle("hidden",     !isRecording);
 
-  // Results section visibility
   resultsSection.style.display =
     (newState === STATE.RESULTS || newState === STATE.PLAYBACK) ? "" : "none";
 }
