@@ -41,9 +41,10 @@ let sequenceStartMs     = null;
 let lastAnalysis        = null;
 let lastTotalDurationMs = 0;
 
-// Calibration: device mic latency offset in ms (positive = mic registers late).
-// Loaded from localStorage so it survives page reloads.
-let micOffsetMs = parseFloat(localStorage.getItem("rhythmapp_offset") || "0");
+// Per-mode latency offsets — each input type has its own timing characteristics.
+// Positive value means input registers late; we subtract it from timestamps.
+let micOffsetMs   = parseFloat(localStorage.getItem("rhythmapp_offset")       || "0");
+let spaceOffsetMs = parseFloat(localStorage.getItem("rhythmapp_space_offset") || "0");
 let isCalibrating = false;
 
 // Simple 4-beat pattern used only during calibration
@@ -166,9 +167,9 @@ function applyInputMode() {
   const isMic = inputMode === "mic";
   modeMicBtn.classList.toggle("active",   isMic);
   modeSpaceBtn.classList.toggle("active", !isMic);
-  micControls.style.display  = isMic ? "" : "none";
-  calibrateBtn.style.display = isMic ? "" : "none";
-  offsetDisplay.style.display = isMic ? "" : "none";
+  micControls.style.display = isMic ? "" : "none";
+  // Calibrate button and offset display are useful in both modes
+  updateOffsetDisplay();
 }
 
 // ── AudioContext (created on first user gesture) ──────────────────────────────
@@ -324,8 +325,9 @@ function finishRecording() {
     return;
   }
 
-  // Apply mic offset: if mic registers late by X ms, shift claps back by X ms
-  const adjustedClaps = clapTimestamps.map((t) => t - micOffsetMs);
+  // Apply the offset for whichever input mode is active
+  const activeOffset = inputMode === "mic" ? micOffsetMs : spaceOffsetMs;
+  const adjustedClaps = clapTimestamps.map((t) => t - activeOffset);
   const { beats } = rhythmToTimestamps(currentRhythm.pattern, getBpm());
   lastAnalysis = analyzePerformance(beats, adjustedClaps);
 
@@ -340,24 +342,26 @@ async function onCalibrateClick() {
   if (state !== STATE.IDLE && state !== STATE.RESULTS) return;
 
   ensureAudioCtx();
-  if (!audioInput) audioInput = new AudioInput(audioCtx);
 
-  try {
-    await audioInput.requestMic();
-  } catch {
-    setStatus(statusEl, "Microphone access denied — please allow mic access and try again.", "error");
-    return;
+  if (inputMode === "mic") {
+    if (!audioInput) audioInput = new AudioInput(audioCtx);
+    try {
+      await audioInput.requestMic();
+    } catch {
+      setStatus(statusEl, "Microphone access denied — please allow mic access and try again.", "error");
+      return;
+    }
   }
 
   isCalibrating = true;
-  startCountdown();   // reuses the normal countdown → recording flow
+  startCountdown();
 }
 
 function finishCalibration() {
   const bpm = getBpm();
   const { beats } = rhythmToTimestamps(CALIB_PATTERN, bpm);
 
-  // Match each expected beat to the nearest clap and collect offsets
+  // Match each expected beat to the nearest input event and collect offsets
   const offsets = [];
   beats.forEach((beat) => {
     let nearest = null;
@@ -366,24 +370,31 @@ function finishCalibration() {
       const dist = Math.abs(t - beat.time);
       if (dist < nearestDist) { nearestDist = dist; nearest = t; }
     });
-    // Only count claps within a generous ±400ms window
     if (nearest !== null && nearestDist < 400) {
       offsets.push(nearest - beat.time);
     }
   });
 
   if (offsets.length >= 2) {
-    // Use median to ignore outliers (e.g. a stray extra clap)
     offsets.sort((a, b) => a - b);
-    micOffsetMs = offsets[Math.floor(offsets.length / 2)];
-    localStorage.setItem("rhythmapp_offset", String(micOffsetMs));
+    const median = offsets[Math.floor(offsets.length / 2)];
+    const label  = inputMode === "mic" ? "Mic" : "Spacebar";
+
+    if (inputMode === "mic") {
+      micOffsetMs = median;
+      localStorage.setItem("rhythmapp_offset", String(micOffsetMs));
+    } else {
+      spaceOffsetMs = median;
+      localStorage.setItem("rhythmapp_space_offset", String(spaceOffsetMs));
+    }
+
     updateOffsetDisplay();
     setStatus(statusEl,
-      `Calibrated! Mic offset set to ${micOffsetMs > 0 ? "+" : ""}${Math.round(micOffsetMs)}ms. You're ready to practice.`,
+      `Calibrated! ${label} offset set to ${median > 0 ? "+" : ""}${Math.round(median)}ms. You're ready to practice.`,
       "success"
     );
   } else {
-    setStatus(statusEl, "Calibration needs at least 2 matched claps — try again.", "error");
+    setStatus(statusEl, "Calibration needs at least 2 matched inputs — try again.", "error");
   }
 
   setState(STATE.IDLE);
@@ -391,11 +402,13 @@ function finishCalibration() {
 
 function updateOffsetDisplay() {
   if (!offsetDisplay) return;
-  if (micOffsetMs === 0) {
+  const offset = inputMode === "mic" ? micOffsetMs : spaceOffsetMs;
+  const label  = inputMode === "mic" ? "Mic" : "Spacebar";
+  if (offset === 0) {
     offsetDisplay.textContent = "Not calibrated";
     offsetDisplay.className   = "offset-display uncalibrated";
   } else {
-    offsetDisplay.textContent = `Mic offset: ${micOffsetMs > 0 ? "+" : ""}${Math.round(micOffsetMs)}ms`;
+    offsetDisplay.textContent = `${label} offset: ${offset > 0 ? "+" : ""}${Math.round(offset)}ms`;
     offsetDisplay.className   = "offset-display calibrated";
   }
 }
@@ -424,15 +437,18 @@ function stopPlayback() {
 function setState(newState) {
   state = newState;
 
-  const recordingMsg = inputMode === "space"
+  const recordingMsg  = inputMode === "space"
     ? "Press spacebar on every beat! Press Stop when done."
     : "Clap along! Press Stop when done.";
+  const calibrateMsg = inputMode === "space"
+    ? "Press spacebar with every beat to calibrate…"
+    : "Clap with every beat to calibrate…";
 
   const messages = {
     [STATE.IDLE]:           ["Select a rhythm and press Start.", ""],
     [STATE.REQUESTING_MIC]: ["Requesting microphone access…", "info"],
     [STATE.COUNTDOWN]:      ["Get ready…", "info"],
-    [STATE.CALIBRATING]:    ["Clap with every beat to calibrate…", "recording"],
+    [STATE.CALIBRATING]:    [calibrateMsg, "recording"],
     [STATE.RECORDING]:      [recordingMsg, "recording"],
     [STATE.RESULTS]:        ["Done! See your results below.", "success"],
     [STATE.PLAYBACK]:       ["Playing back the correct rhythm…", "info"],
