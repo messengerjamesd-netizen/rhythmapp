@@ -154,7 +154,7 @@ export function clearCountdown(el) {
 // ── Results rendering ─────────────────────────────────────────────────────────
 
 export function renderResults(container, analysis, totalDurationMs) {
-  const { results, accuracy, extraClaps, toleranceMs } = analysis;
+  const { results, accuracy, extraClaps } = analysis;
   container.innerHTML = "";
 
   // Score header
@@ -197,7 +197,7 @@ export function renderResults(container, analysis, totalDurationMs) {
   container.appendChild(timelineWrap);
 
   requestAnimationFrame(() =>
-    drawTimeline(canvas, results, extraClaps, totalDurationMs, toleranceMs)
+    drawTimeline(canvas, results, extraClaps, totalDurationMs)
   );
 
   if (extraClaps.length > 0) {
@@ -208,7 +208,7 @@ export function renderResults(container, analysis, totalDurationMs) {
   }
 }
 
-function drawTimeline(canvas, results, extraClaps, totalMs, toleranceMs) {
+function drawTimeline(canvas, results, extraClaps, totalMs) {
   const dpr = window.devicePixelRatio || 1;
   const W   = canvas.parentElement ? canvas.parentElement.clientWidth : 600;
   const H   = 80;
@@ -220,7 +220,8 @@ function drawTimeline(canvas, results, extraClaps, totalMs, toleranceMs) {
   const ctx  = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
 
-  const toX = (ms) => (ms / totalMs) * (W - 20) + 10;
+  const usableW = W - 20;
+  const toX = (ms) => (ms / totalMs) * usableW + 10;
 
   ctx.clearRect(0, 0, W, H);
 
@@ -232,10 +233,11 @@ function drawTimeline(canvas, results, extraClaps, totalMs, toleranceMs) {
   ctx.lineTo(W - 10, H / 2);
   ctx.stroke();
 
-  // Tolerance bands
+  // Tolerance bands — each note uses its own per-note tolerance so bands
+  // never overlap even for dense sixteenth-note patterns
   results.forEach((r) => {
     const x    = toX(r.expected);
-    const tolW = (toleranceMs / totalMs) * (W - 20);
+    const tolW = (r.tolerance / totalMs) * usableW;
     ctx.fillStyle = "rgba(100,200,100,0.15)";
     ctx.fillRect(x - tolW, H / 2 - 14, tolW * 2, 28);
   });
