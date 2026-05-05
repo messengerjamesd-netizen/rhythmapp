@@ -130,20 +130,37 @@ async function onStartClick() {
 
 function startCountdown() {
   setState(STATE.COUNTDOWN);
-  const bpm    = getBpm();
-  const beatMs = (60 / bpm) * 1000;
-  let count = currentRhythm.timeSig.beats; // count in for one full bar
+  const bpm          = getBpm();
+  const beatSec      = 60 / bpm;
+  const beatMs       = beatSec * 1000;
+  const beatsPerBar  = currentRhythm.timeSig.beats;
 
-  // Schedule count-in clicks
   ensureAudioCtx();
-  const countStart = audioCtx.currentTime + 0.05;
-  for (let i = 0; i < currentRhythm.timeSig.beats; i++) {
-    scheduleCountClick(countStart + i * (beatMs / 1000), i === 0);
+
+  // Pin both clocks at the same instant so we can convert between them later
+  const audioNow = audioCtx.currentTime;
+  const perfNow  = performance.now();
+
+  // Count-in starts 50ms from now (gives the audio graph time to prepare)
+  const countStartAudio = audioNow + 0.05;
+
+  // Schedule all count-in clicks on the Web Audio clock (sample-accurate)
+  for (let i = 0; i < beatsPerBar; i++) {
+    scheduleCountClick(countStartAudio + i * beatSec, i === 0);
   }
 
+  // The rhythm's beat 1 lands exactly one bar after the count-in begins —
+  // no gap, it's simply the next click in the sequence
+  const rhythmStartAudio = countStartAudio + beatsPerBar * beatSec;
+
+  // Convert that audio-clock time to a performance.now() time so we can
+  // align clap timestamps (which use performance.now()) correctly
+  const rhythmStartPerf = perfNow + (rhythmStartAudio - audioNow) * 1000;
+
+  // Visual countdown display (driven by setTimeout, just for the numbers)
+  let count = beatsPerBar;
   showCountdown(countdownEl, count);
   count--;
-
   const interval = setInterval(() => {
     if (count > 0) {
       showCountdown(countdownEl, count);
@@ -151,12 +168,16 @@ function startCountdown() {
     } else {
       showCountdown(countdownEl, 0); // "GO!"
       clearInterval(interval);
-      setTimeout(() => {
-        clearCountdown(countdownEl);
-        startRecording();
-      }, Math.min(beatMs, 600));
     }
   }, beatMs);
+
+  // Start recording 30ms before beat 1 so the mic is open and ready.
+  // We pass the pre-calculated anchor times so nothing re-derives the start.
+  const msUntilBeat1 = (rhythmStartAudio - audioNow) * 1000;
+  setTimeout(() => {
+    clearCountdown(countdownEl);
+    startRecording(rhythmStartAudio, rhythmStartPerf);
+  }, msUntilBeat1 - 30);
 }
 
 function scheduleCountClick(audioTime, accent = false) {
@@ -172,29 +193,30 @@ function scheduleCountClick(audioTime, accent = false) {
   osc.stop(audioTime + 0.07);
 }
 
-function startRecording() {
+function startRecording(rhythmStartAudio, rhythmStartPerf) {
   const bpm = getBpm();
   const { beats, totalDuration } = rhythmToTimestamps(currentRhythm.pattern, bpm);
   const quarterBeats = totalBeats(currentRhythm.pattern);
 
-  clapTimestamps      = [];
-  sequenceStartMs     = performance.now();
+  clapTimestamps = [];
+  // Anchor clap timestamps to the exact moment beat 1 is scheduled to sound
+  sequenceStartMs     = rhythmStartPerf;
   lastTotalDurationMs = totalDuration;
 
   setState(STATE.RECORDING);
 
   audioInput.start((absoluteMs) => {
-    // Convert absolute timestamp to relative ms from sequence start
     clapTimestamps.push(absoluteMs - sequenceStartMs);
     flashClap(clapIndicator);
   });
 
-  const audioStartTime = audioCtx.currentTime + 0.01;
+  // Pass the same audio-clock anchor so the metronome starts on beat 1
+  // with no gap from the count-in — it's a seamless continuation
   timingEngine.start(
     bpm,
     quarterBeats,
     () => flashBeat(beatIndicator),
-    audioStartTime,
+    rhythmStartAudio,
     currentRhythm.timeSig.beats
   );
 
