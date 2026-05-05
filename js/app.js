@@ -59,7 +59,7 @@ const CALIB_TIMESIG = { beats: 4, value: 4 };
 
 let inputMode = localStorage.getItem("rhythmapp_input_mode") || "mic"; // "mic" | "space"
 let lastSpaceMs = -Infinity;
-const SPACE_DEBOUNCE = 150;
+let currentDebounceMs = 80; // updated at the start of each session
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -121,7 +121,7 @@ document.addEventListener("keydown", (e) => {
   if (inputMode !== "space") return;
   e.preventDefault();
   const now = performance.now();
-  if (now - lastSpaceMs < SPACE_DEBOUNCE) return;
+  if (now - lastSpaceMs < currentDebounceMs) return;
   lastSpaceMs = now;
   clapTimestamps.push(now - sequenceStartMs);
   flashClap(clapIndicator);
@@ -137,6 +137,21 @@ window.addEventListener("resize", () => {
 
 function getBpm() {
   return Math.max(20, Math.min(300, parseInt(bpmInput.value, 10) || 80));
+}
+
+/**
+ * Debounce that scales with the shortest note in the pattern.
+ * Uses 40% of the minimum note gap so all legitimate claps pass through
+ * while accidental double-detections (usually <30ms apart) are still filtered.
+ * Floor of 50ms handles any edge cases; no ceiling so slow tempos work too.
+ */
+function adaptiveDebounceMs(pattern, bpm) {
+  const msPerBeat = (60 / bpm) * 1000;
+  const minDuration = pattern
+    .filter((e) => e.type === "note")
+    .reduce((min, e) => Math.min(min, e.duration), Infinity);
+  const minGapMs = minDuration * msPerBeat;
+  return Math.max(50, minGapMs * 0.4);
 }
 
 // ── Input mode ────────────────────────────────────────────────────────────────
@@ -272,9 +287,11 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
   lastTotalDurationMs = totalDuration;
 
   lastSpaceMs = -Infinity; // reset spacebar debounce for new session
+  currentDebounceMs = adaptiveDebounceMs(activePattern, bpm);
   setState(STATE.RECORDING);
 
   if (inputMode === "mic") {
+    audioInput.DEBOUNCE_MS = currentDebounceMs;
     audioInput.start((absoluteMs) => {
       clapTimestamps.push(absoluteMs - sequenceStartMs);
       flashClap(clapIndicator);

@@ -10,7 +10,7 @@ export class AudioInput {
     this._listening = false;
     this._onClap = null;
     this._lastClapTime = -Infinity; // ms, for debounce
-    this.DEBOUNCE_MS = 150;         // minimum gap between two claps
+    this.DEBOUNCE_MS = 80;          // set dynamically by app before each session
     this.THRESHOLD = 0.25;          // amplitude threshold (0–1); raised to avoid noise
   }
 
