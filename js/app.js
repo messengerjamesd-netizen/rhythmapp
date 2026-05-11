@@ -44,17 +44,13 @@ let sequenceStartMs     = null;
 let lastAnalysis        = null;
 let lastTotalDurationMs = 0;
 
-// Challenge mode — set when the user attempts the daily challenge
 let isChallengeMode = false;
-let dailyChallenge  = null; // set on init
+let dailyChallenge  = null;
 
-// Per-mode latency offsets — each input type has its own timing characteristics.
-// Positive value means input registers late; we subtract it from timestamps.
 let micOffsetMs   = parseFloat(localStorage.getItem("rhythmapp_offset")       || "0");
 let spaceOffsetMs = parseFloat(localStorage.getItem("rhythmapp_space_offset") || "0");
 let isCalibrating = false;
 
-// Simple 4-beat pattern used only during calibration
 const CALIB_PATTERN = [
   { type: "note", duration: 1 },
   { type: "note", duration: 1 },
@@ -65,9 +61,9 @@ const CALIB_TIMESIG = { beats: 4, value: 4 };
 
 // ── Input mode ────────────────────────────────────────────────────────────────
 
-let inputMode = localStorage.getItem("rhythmapp_input_mode") || "mic"; // "mic" | "space"
+let inputMode = localStorage.getItem("rhythmapp_input_mode") || "mic";
 let lastSpaceMs = -Infinity;
-let currentDebounceMs = 80; // updated at the start of each session
+let currentDebounceMs = 80;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -94,15 +90,14 @@ const resultsEl       = document.getElementById("results");
 const thresholdSlider = document.getElementById("threshold-slider");
 const thresholdVal    = document.getElementById("threshold-val");
 
-// Challenge DOM
 const challengeBtn        = document.getElementById("challenge-btn");
 const challengeDateEl     = document.getElementById("challenge-date");
 const challengeNameEl     = document.getElementById("challenge-rhythm-name");
 const challengeDiffEl     = document.getElementById("challenge-difficulty");
 const leaderboardListEl   = document.getElementById("leaderboard-list");
 const challengeSubmitWrap = document.getElementById("challenge-submit-wrap");
-const lbNameInput         = document.getElementById("lb-name-input");
 const lbSubmitBtn         = document.getElementById("lb-submit-btn");
+const lbNameReveal        = document.getElementById("lb-name-reveal");
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -117,7 +112,7 @@ buildRhythmSelector(rhythmSel, staffCanvas, (rhythm) => {
   isChallengeMode = false;
 });
 
-initChallenge();
+initChallenge(); // async, leaderboard loads in background
 
 bpmInput.addEventListener("input", () => {
   if (currentRhythm) renderBlocks(blockViz, currentRhythm.pattern, getBpm());
@@ -136,7 +131,6 @@ calibrateBtn.addEventListener("click", onCalibrateClick);
 modeMicBtn.addEventListener("click",   () => setInputMode("mic"));
 modeSpaceBtn.addEventListener("click", () => setInputMode("space"));
 
-// Global spacebar listener — only fires during recording, prevents page scroll
 document.addEventListener("keydown", (e) => {
   if (e.code !== "Space") return;
   if (state !== STATE.RECORDING && state !== STATE.CALIBRATING) return;
@@ -150,9 +144,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 updateOffsetDisplay();
-applyInputMode(); // restore saved mode on load
+applyInputMode();
 
-// Re-render staff on window resize (canvas must match container width)
 window.addEventListener("resize", () => {
   if (currentRhythm) updateStaff(currentRhythm.pattern, currentRhythm.timeSig);
 });
@@ -166,7 +159,6 @@ function getDailyChallengeRhythm() {
   for (let i = 0; i < dateStr.length; i++) {
     hash = ((hash << 5) - hash + dateStr.charCodeAt(i)) | 0;
   }
-  // Pull from Intermediate + Advanced only
   const pool = [
     ...(RHYTHM_LIBRARY["Intermediate"] || []),
     ...(RHYTHM_LIBRARY["Advanced"]     || []),
@@ -174,39 +166,45 @@ function getDailyChallengeRhythm() {
   return pool[Math.abs(hash) % pool.length];
 }
 
-function todayKey() {
-  const n = new Date();
-  return `rhythmapp_challenge_${n.getFullYear()}-${n.getMonth()}-${n.getDate()}`;
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function loadLeaderboard() {
-  try { return JSON.parse(localStorage.getItem(todayKey()) || "[]"); }
-  catch { return []; }
+async function fetchLeaderboard() {
+  try {
+    const res = await fetch(`/api/leaderboard?date=${todayStr()}`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
 }
 
-function saveScore(name, score) {
-  const entries = loadLeaderboard();
-  entries.push({ name: name.trim() || "Anonymous", score });
-  entries.sort((a, b) => b.score - a.score);
-  localStorage.setItem(todayKey(), JSON.stringify(entries.slice(0, 20)));
-  return entries;
+async function submitScore(score, rhythm) {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ score, rhythm, date: todayStr() }),
+  });
+  if (!res.ok) throw new Error("Submit failed");
+  return await res.json();
 }
 
-function initChallenge() {
+async function initChallenge() {
   dailyChallenge = getDailyChallengeRhythm();
 
-  // Determine which category this rhythm belongs to
   let diffLabel = "";
   for (const [cat, rhythms] of Object.entries(RHYTHM_LIBRARY)) {
     if (rhythms.some((r) => r.name === dailyChallenge.name)) { diffLabel = cat; break; }
   }
 
   const today = new Date();
-  challengeDateEl.textContent  = today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  challengeNameEl.textContent  = dailyChallenge.name;
-  challengeDiffEl.textContent  = diffLabel;
+  challengeDateEl.textContent = today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  challengeNameEl.textContent = dailyChallenge.name;
+  challengeDiffEl.textContent = diffLabel;
 
-  renderLeaderboard(leaderboardListEl, loadLeaderboard());
+  renderLeaderboard(leaderboardListEl, await fetchLeaderboard());
 }
 
 // ── Challenge attempt ─────────────────────────────────────────────────────────
@@ -214,41 +212,44 @@ function initChallenge() {
 challengeBtn.addEventListener("click", async () => {
   if (state !== STATE.IDLE && state !== STATE.RESULTS) return;
 
-  // Select the challenge rhythm in the picker and update notation
   selectRhythmByName(rhythmSel, dailyChallenge.name);
   currentRhythm = dailyChallenge;
   updateStaff(currentRhythm.pattern, currentRhythm.timeSig);
   renderBlocks(blockViz, currentRhythm.pattern, getBpm());
 
-  // Clear any previous challenge submit form
   challengeSubmitWrap.style.display = "none";
+  lbNameReveal.style.display = "none";
+  lbSubmitBtn.disabled = false;
+  lbSubmitBtn.textContent = "Submit Score";
   isChallengeMode = true;
 
   await onStartClick();
 });
 
-lbSubmitBtn.addEventListener("click", () => {
-  const name    = lbNameInput.value;
-  const entries = saveScore(name, lastAnalysis.accuracy);
-  renderLeaderboard(leaderboardListEl, entries);
-  challengeSubmitWrap.style.display = "none";
-  lbNameInput.value = "";
-  // Scroll to leaderboard
-  document.getElementById("challenge-section").scrollIntoView({ behavior: "smooth" });
+lbSubmitBtn.addEventListener("click", async () => {
+  lbSubmitBtn.disabled = true;
+  lbSubmitBtn.textContent = "Submitting…";
+  try {
+    const { name, entries } = await submitScore(lastAnalysis.accuracy, currentRhythm.name);
+    renderLeaderboard(leaderboardListEl, entries);
+    challengeSubmitWrap.style.display = "none";
+    lbNameReveal.textContent = `You're on the board as ${name}!`;
+    lbNameReveal.style.display = "";
+    document.getElementById("challenge-section").scrollIntoView({ behavior: "smooth" });
+  } catch {
+    lbSubmitBtn.textContent = "Submit Score";
+    lbSubmitBtn.disabled = false;
+    lbNameReveal.textContent = "Couldn't reach the leaderboard — check your connection.";
+    lbNameReveal.style.display = "";
+  }
 });
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getBpm() {
   return Math.max(20, Math.min(300, parseInt(bpmInput.value, 10) || 80));
 }
 
-/**
- * Debounce that scales with the shortest note in the pattern.
- * Uses 40% of the minimum note gap so all legitimate claps pass through
- * while accidental double-detections (usually <30ms apart) are still filtered.
- * Floor of 50ms handles any edge cases; no ceiling so slow tempos work too.
- */
 function adaptiveDebounceMs(pattern, bpm) {
   const msPerBeat = (60 / bpm) * 1000;
   const minDuration = pattern
@@ -271,11 +272,10 @@ function applyInputMode() {
   modeMicBtn.classList.toggle("active",   isMic);
   modeSpaceBtn.classList.toggle("active", !isMic);
   micControls.style.display = isMic ? "" : "none";
-  // Calibrate button and offset display are useful in both modes
   updateOffsetDisplay();
 }
 
-// ── AudioContext (created on first user gesture) ──────────────────────────────
+// ── AudioContext ────────────────────────────────────────────────────────────────
 
 function ensureAudioCtx() {
   if (!audioCtx) {
@@ -329,27 +329,17 @@ function startCountdown() {
 
   ensureAudioCtx();
 
-  // Pin both clocks at the same instant so we can convert between them later
   const audioNow = audioCtx.currentTime;
   const perfNow  = performance.now();
-
-  // Count-in starts 50ms from now (gives the audio graph time to prepare)
   const countStartAudio = audioNow + 0.05;
 
-  // Schedule all count-in clicks on the Web Audio clock (sample-accurate)
   for (let i = 0; i < beatsPerBar; i++) {
     scheduleCountClick(countStartAudio + i * beatSec, i === 0);
   }
 
-  // The rhythm's beat 1 lands exactly one bar after the count-in begins —
-  // no gap, it's simply the next click in the sequence
   const rhythmStartAudio = countStartAudio + beatsPerBar * beatSec;
-
-  // Convert that audio-clock time to a performance.now() time so we can
-  // align clap timestamps (which use performance.now()) correctly
   const rhythmStartPerf = perfNow + (rhythmStartAudio - audioNow) * 1000;
 
-  // Visual countdown display (driven by setTimeout, just for the numbers)
   let count = beatsPerBar;
   showCountdown(countdownEl, count);
   count--;
@@ -358,13 +348,11 @@ function startCountdown() {
       showCountdown(countdownEl, count);
       count--;
     } else {
-      showCountdown(countdownEl, 0); // "GO!"
+      showCountdown(countdownEl, 0);
       clearInterval(interval);
     }
   }, beatMs);
 
-  // Start recording 30ms before beat 1 so the mic is open and ready.
-  // We pass the pre-calculated anchor times so nothing re-derives the start.
   const msUntilBeat1 = (rhythmStartAudio - audioNow) * 1000;
   setTimeout(() => {
     clearCountdown(countdownEl);
@@ -393,11 +381,10 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
   const quarterBeats = totalBeats(activePattern);
 
   clapTimestamps = [];
-  // Anchor clap timestamps to the exact moment beat 1 is scheduled to sound
   sequenceStartMs     = rhythmStartPerf;
   lastTotalDurationMs = totalDuration;
 
-  lastSpaceMs = -Infinity; // reset spacebar debounce for new session
+  lastSpaceMs = -Infinity;
   currentDebounceMs = adaptiveDebounceMs(activePattern, bpm);
   setState(STATE.RECORDING);
 
@@ -409,8 +396,6 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
     });
   }
 
-  // Pass the same audio-clock anchor so the metronome starts on beat 1
-  // with no gap from the count-in — it's a seamless continuation
   timingEngine.start(
     bpm,
     quarterBeats,
@@ -419,7 +404,6 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
     activeTimeSig.beats
   );
 
-  // Auto-stop after rhythm completes + small buffer
   setTimeout(() => {
     if (state === STATE.RECORDING || state === STATE.CALIBRATING) finishRecording();
   }, totalDuration + 600);
@@ -435,7 +419,6 @@ function finishRecording() {
     return;
   }
 
-  // Apply the offset for whichever input mode is active
   const activeOffset = inputMode === "mic" ? micOffsetMs : spaceOffsetMs;
   const adjustedClaps = clapTimestamps.map((t) => t - activeOffset);
   const { beats } = rhythmToTimestamps(currentRhythm.pattern, getBpm());
@@ -448,7 +431,7 @@ function finishRecording() {
   if (isChallengeMode) {
     isChallengeMode = false;
     challengeSubmitWrap.style.display = "";
-    lbNameInput.focus();
+    lbSubmitBtn.focus();
   }
 }
 
@@ -477,7 +460,6 @@ function finishCalibration() {
   const bpm = getBpm();
   const { beats } = rhythmToTimestamps(CALIB_PATTERN, bpm);
 
-  // Match each expected beat to the nearest input event and collect offsets
   const offsets = [];
   beats.forEach((beat) => {
     let nearest = null;
@@ -589,7 +571,6 @@ function setState(newState) {
   clapIndicator.classList.toggle("hidden", !isActive);
   beatLabel.classList.toggle("hidden",     !isActive);
   clapLabel.classList.toggle("hidden",     !isActive);
-  // Show spacebar hint only in spacebar mode while active
   if (spacebarHint) spacebarHint.classList.toggle("hidden", !(isActive && inputMode === "space"));
 
   resultsSection.style.display =
