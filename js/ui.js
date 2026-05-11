@@ -6,8 +6,6 @@ import { renderStaff, bravuraReady } from "./staffRenderer.js";
 
 export { gradeLabel };
 
-export { gradeLabel };
-
 // ── Rhythm selector (categories + tabs) ──────────────────────────────────────
 
 let _staffCanvas = null;
