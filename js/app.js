@@ -292,8 +292,6 @@ function applyInputMode() {
   modeMicBtn.classList.toggle("active",   isMic);
   modeSpaceBtn.classList.toggle("active", !isMic);
   micControls.style.display = isMic ? "" : "none";
-  const calibrateTip = document.getElementById("challenge-calibrate-btn")?.closest(".calibrate-tip");
-  if (calibrateTip) calibrateTip.style.display = isMic ? "" : "none";
   updateOffsetDisplay();
 }
 
