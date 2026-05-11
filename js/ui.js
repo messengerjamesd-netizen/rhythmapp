@@ -2,7 +2,7 @@
 
 import { RHYTHM_LIBRARY } from "./rhythmLibrary.js";
 import { gradeLabel } from "./analysisEngine.js";
-import { renderStaff } from "./staffRenderer.js";
+import { renderStaff, bravuraReady } from "./staffRenderer.js";
 
 export { gradeLabel };
 
@@ -111,10 +111,22 @@ export function selectRhythmByName(container, name) {
 
 // ── Staff notation rendering ──────────────────────────────────────────────────
 
+let _lastPattern = null;
+let _lastTimeSig = null;
+
 export function updateStaff(pattern, timeSig) {
+  _lastPattern = pattern;
+  _lastTimeSig = timeSig;
   if (!_staffCanvas) return;
   renderStaff(_staffCanvas, pattern, timeSig);
 }
+
+// Re-render once Bravura loads so rests use the proper glyph
+bravuraReady.then(() => {
+  if (_staffCanvas && _lastPattern) {
+    renderStaff(_staffCanvas, _lastPattern, _lastTimeSig);
+  }
+});
 
 // ── Beat block visualization (kept as secondary reference below staff) ────────
 

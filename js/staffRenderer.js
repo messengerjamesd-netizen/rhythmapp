@@ -26,6 +26,33 @@ const DOTTED = new Map([
   [3,     2],     // dotted half
 ]);
 
+// ── Bravura music font (SMuFL) ────────────────────────────────────────────────
+
+// Bravura is designed at 2048 UPM with 250 design units per staff space,
+// so the correct canvas font-size to match our LS staff spacing is:
+const BRAVURA_SIZE = Math.round(LS * 2048 / 250); // ~90 px for LS=11
+
+const GLYPH_REST_QUARTER   = '';
+const GLYPH_REST_EIGHTH    = '';
+const GLYPH_REST_SIXTEENTH = '';
+
+let _bravuraLoaded = false;
+
+// Load once at module init; callers can await bravuraReady before first render
+export const bravuraReady = (async () => {
+  try {
+    const face = new FontFace(
+      'Bravura',
+      "url('https://cdn.jsdelivr.net/npm/@vexflow-fonts/bravura/bravura.woff2')",
+    );
+    await face.load();
+    document.fonts.add(face);
+    _bravuraLoaded = true;
+  } catch {
+    // Font unavailable — bezier fallback used instead
+  }
+})();
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
@@ -357,18 +384,28 @@ function drawRest(ctx, cx, sMid, duration, staffTop) {
   const baseDur = dotted ? DOTTED.get(Math.round(duration * 1000) / 1000) : duration;
 
   if (baseDur >= 4) {
-    // Whole rest: filled rectangle hanging from line 1 (second from top)
-    const ry = staffTop + LS - 1;
-    ctx.fillRect(cx - 7, ry, 14, 6);
+    // Whole rest: filled rectangle hanging from 2nd line
+    ctx.fillRect(cx - 7, staffTop + LS - 1, 14, 6);
   } else if (baseDur >= 2) {
     // Half rest: filled rectangle sitting on middle line
     ctx.fillRect(cx - 7, sMid - 6, 14, 6);
-  } else if (baseDur >= 1) {
-    drawQuarterRest(ctx, cx, sMid);
-  } else if (baseDur >= 0.5) {
-    drawEighthRest(ctx, cx, sMid);
+  } else if (_bravuraLoaded) {
+    // Quarter / eighth / sixteenth: use Bravura SMuFL glyph
+    const glyph = baseDur >= 1 ? GLYPH_REST_QUARTER
+                : baseDur >= 0.5 ? GLYPH_REST_EIGHTH
+                : GLYPH_REST_SIXTEENTH;
+    ctx.font         = `${BRAVURA_SIZE}px Bravura`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'alphabetic';
+    // Compute visual center of the glyph and position it at sMid
+    const m     = ctx.measureText(glyph);
+    const drawY = sMid + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+    ctx.fillText(glyph, cx, drawY);
   } else {
-    drawSixteenthRest(ctx, cx, sMid);
+    // Bravura not loaded yet — bezier fallback
+    if (baseDur >= 1) drawQuarterRest(ctx, cx, sMid);
+    else if (baseDur >= 0.5) drawEighthRest(ctx, cx, sMid);
+    else drawSixteenthRest(ctx, cx, sMid);
   }
 
   // Dot for dotted rests
