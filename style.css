@@ -490,6 +490,26 @@ kbd {
   color: var(--muted);
 }
 
+.calibrate-tip {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-btn:hover { color: var(--accent2); }
+
 .leaderboard-title {
   font-size: 0.76rem;
   font-weight: 600;

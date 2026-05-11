@@ -383,57 +383,75 @@ function drawRest(ctx, cx, sMid, duration, staffTop) {
 }
 
 function drawQuarterRest(ctx, cx, cy) {
-  // Classic quarter rest: stylized Z/lightning bolt
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 2;
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
 
+  const top = cy - LS * 1.4;
+  const bot = cy + LS * 1.1;
+
+  // Short flag angling upper-right
   ctx.beginPath();
-  // Top diagonal going right
-  ctx.moveTo(cx - 3, cy - 14);
-  ctx.lineTo(cx + 5, cy - 8);
-  // Hook back left and down
-  ctx.lineTo(cx - 4, cy - 1);
+  ctx.moveTo(cx - 4, top);
+  ctx.lineTo(cx + 6, top + LS * 0.55);
   ctx.stroke();
 
-  // Lower S-curve finishing with a circle
+  // Diagonal slash down-left
   ctx.beginPath();
-  ctx.moveTo(cx - 4, cy - 1);
-  ctx.bezierCurveTo(cx + 9, cy + 2, cx + 3, cy + 11, cx - 2, cy + 13);
+  ctx.moveTo(cx + 4, top + LS * 0.45);
+  ctx.lineTo(cx - 4, top + LS * 1.15);
   ctx.stroke();
 
-  // Terminal dot
+  // Hook sweeping right then down into terminal dot
   ctx.beginPath();
-  ctx.arc(cx - 1, cy + 13, 2.5, 0, Math.PI * 2);
+  ctx.moveTo(cx - 3, top + LS * 1.05);
+  ctx.bezierCurveTo(
+    cx + 9, top + LS * 1.1,
+    cx + 8, top + LS * 1.85,
+    cx,     bot
+  );
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(cx, bot, 2.5, 0, Math.PI * 2);
   ctx.fill();
 }
 
 function drawEighthRest(ctx, cx, cy) {
-  // Filled circle at top + diagonal tail
+  // Eighth rest: filled blob at upper-right + diagonal stem to lower-left
+  const dotX = cx + 4;
+  const dotY = cy - LS * 0.8;
+
   ctx.beginPath();
-  ctx.arc(cx + 2, cy - 9, 3, 0, Math.PI * 2);
+  ctx.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 2;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(cx + 2, cy - 9);
-  ctx.lineTo(cx - 3, cy + 4);
+  ctx.moveTo(dotX, dotY + 3);
+  ctx.lineTo(cx - 3, cy + LS * 0.75);
   ctx.stroke();
 }
 
 function drawSixteenthRest(ctx, cx, cy) {
-  // Two circles + diagonal tail
+  // Sixteenth rest: two blobs + longer diagonal stem
+  const dot1X = cx + 4;
+  const dot1Y = cy - LS * 1.6;
+  const dot2X = cx + 4;
+  const dot2Y = cy - LS * 0.55;
+
   ctx.beginPath();
-  ctx.arc(cx + 2, cy - 9,  3, 0, Math.PI * 2);
+  ctx.arc(dot1X, dot1Y, 3.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(cx + 2, cy - 17, 3, 0, Math.PI * 2);
+  ctx.arc(dot2X, dot2Y, 3.5, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 2;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(cx + 2, cy - 17);
-  ctx.lineTo(cx - 3, cy + 4);
+  ctx.moveTo(dot1X, dot1Y + 3);
+  ctx.lineTo(cx - 3, cy + LS * 0.75);
   ctx.stroke();
 }

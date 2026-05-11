@@ -133,6 +133,11 @@ startBtn.addEventListener("click",     onStartClick);
 playbackBtn.addEventListener("click",  onPlaybackClick);
 calibrateBtn.addEventListener("click", onCalibrateClick);
 
+document.getElementById("challenge-calibrate-btn")?.addEventListener("click", () => {
+  calibrateBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+  calibrateBtn.click();
+});
+
 modeMicBtn.addEventListener("click",   () => setInputMode("mic"));
 modeSpaceBtn.addEventListener("click", () => setInputMode("space"));
 
