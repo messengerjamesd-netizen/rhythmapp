@@ -44,9 +44,12 @@ let sequenceStartMs     = null;
 let lastAnalysis        = null;
 let lastTotalDurationMs = 0;
 
+// Challenge mode — set when the user attempts the daily challenge
 let isChallengeMode = false;
-let dailyChallenge  = null;
+let dailyChallenge  = null; // set on init
 
+// Per-mode latency offsets — each input type has its own timing characteristics.
+// Positive value means input registers late; we subtract it from timestamps.
 let micOffsetMs   = parseFloat(localStorage.getItem("rhythmapp_offset")       || "0");
 let spaceOffsetMs = parseFloat(localStorage.getItem("rhythmapp_space_offset") || "0");
 let isCalibrating = false;
@@ -90,6 +93,7 @@ const resultsEl       = document.getElementById("results");
 const thresholdSlider = document.getElementById("threshold-slider");
 const thresholdVal    = document.getElementById("threshold-val");
 
+// Challenge DOM
 const challengeBtn        = document.getElementById("challenge-btn");
 const challengeDateEl     = document.getElementById("challenge-date");
 const challengeNameEl     = document.getElementById("challenge-rhythm-name");
@@ -127,6 +131,11 @@ thresholdSlider.addEventListener("input", () => {
 startBtn.addEventListener("click",     onStartClick);
 playbackBtn.addEventListener("click",  onPlaybackClick);
 calibrateBtn.addEventListener("click", onCalibrateClick);
+
+document.getElementById("challenge-calibrate-btn")?.addEventListener("click", () => {
+  calibrateBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+  calibrateBtn.click();
+});
 
 modeMicBtn.addEventListener("click",   () => setInputMode("mic"));
 modeSpaceBtn.addEventListener("click", () => setInputMode("space"));
@@ -188,7 +197,7 @@ async function submitScore(score, rhythm) {
     body: JSON.stringify({ score, rhythm, date: todayStr() }),
   });
   if (!res.ok) throw new Error("Submit failed");
-  return await res.json();
+  return await res.json(); // { name, entries }
 }
 
 async function initChallenge() {
@@ -212,11 +221,13 @@ async function initChallenge() {
 challengeBtn.addEventListener("click", async () => {
   if (state !== STATE.IDLE && state !== STATE.RESULTS) return;
 
+  // Select the challenge rhythm in the picker and update notation
   selectRhythmByName(rhythmSel, dailyChallenge.name);
   currentRhythm = dailyChallenge;
   updateStaff(currentRhythm.pattern, currentRhythm.timeSig);
   renderBlocks(blockViz, currentRhythm.pattern, getBpm());
 
+  // Reset submit UI for new attempt
   challengeSubmitWrap.style.display = "none";
   lbNameReveal.style.display = "none";
   lbSubmitBtn.disabled = false;
@@ -244,7 +255,7 @@ lbSubmitBtn.addEventListener("click", async () => {
   }
 });
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 function getBpm() {
   return Math.max(20, Math.min(300, parseInt(bpmInput.value, 10) || 80));

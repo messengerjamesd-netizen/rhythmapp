@@ -26,7 +26,34 @@ const DOTTED = new Map([
   [3,     2],     // dotted half
 ]);
 
-// ── Main export ─────────────────────────────────────────────────────────────────
+// ── Bravura music font (SMuFL) ────────────────────────────────────────────────
+
+// Bravura is designed at 2048 UPM with 250 design units per staff space,
+// so the correct canvas font-size to match our LS staff spacing is:
+const BRAVURA_SIZE = Math.round(LS * 2048 / 250); // ~90 px for LS=11
+
+const GLYPH_REST_QUARTER   = '';
+const GLYPH_REST_EIGHTH    = '';
+const GLYPH_REST_SIXTEENTH = '';
+
+let _bravuraLoaded = false;
+
+// Load once at module init; callers can await bravuraReady before first render
+export const bravuraReady = (async () => {
+  try {
+    const face = new FontFace(
+      'Bravura',
+      "url('/fonts/bravura.woff2')",
+    );
+    await face.load();
+    document.fonts.add(face);
+    _bravuraLoaded = true;
+  } catch {
+    // Font unavailable — bezier fallback used instead
+  }
+})();
+
+// ── Main export ───────────────────────────────────────────────────────────────
 
 /**
  * Render notation onto `canvas` for the given pattern and time signature.
@@ -147,28 +174,31 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
     // Primary beam
     ctx.fillRect(x0, stemTipY, xN - x0 + 1, BEAM_W);
 
-    // Secondary beam: only for notes shorter than an eighth (< 0.5 beats).
-    // Dotted eighths (0.75) are eighth-value and carry only the primary beam.
-    const hasSixteenth = group.some((p) => p.event.duration < 0.5);
+    // Secondary beam for sixteenth-or-shorter notes in the group.
+    // Also draws a stub beam connecting a dotted-eighth to its paired sixteenth.
+    const hasSixteenth = group.some((p) => p.event.duration <= 0.25);
     if (hasSixteenth) {
       for (let i = 0; i < group.length; i++) {
         const dur = group[i].event.duration;
-        // Skip eighth-value and longer (plain eighth, dotted eighth)
+        // Skip eighth-value and longer (plain eighth, dotted eighth) — primary beam only
         if (dur >= 0.5) continue;
         const sx = group[i].xCenter + NRX;
         const nextNeedsSecondary = i < group.length - 1 && group[i + 1].event.duration < 0.5;
         const prevConnectedHere  = i > 0             && group[i - 1].event.duration < 0.5;
 
         if (nextNeedsSecondary) {
+          // Full segment to adjacent secondary-beam note
           const nx = group[i + 1].xCenter + NRX;
           ctx.fillRect(sx, stemTipY + BEAM_W + BEAM_GAP, nx - sx + 1, BEAM_W);
         } else if (!prevConnectedHere) {
+          // Isolated or leading secondary-beam note — stub direction depends on position
           if (i === 0) {
             ctx.fillRect(sx,      stemTipY + BEAM_W + BEAM_GAP, 11, BEAM_W); // stub right
           } else {
             ctx.fillRect(sx - 10, stemTipY + BEAM_W + BEAM_GAP, 11, BEAM_W); // stub left
           }
         }
+        // else: previous iteration already drew a segment ending at this stem — nothing to add
       }
     }
 
@@ -248,6 +278,7 @@ function drawNote(ctx, cx, noteY, duration, isBeamed, staffTop) {
     ctx.beginPath();
     ctx.ellipse(cx, noteY, NRX + 2, NRY, HEAD_TILT, 0, Math.PI * 2);
     ctx.stroke();
+    // Inner cutout to distinguish from half note
     ctx.fillStyle = CANVAS_BG;
     ctx.beginPath();
     ctx.ellipse(cx + 1, noteY, NRX - 1, NRY - 1.5, HEAD_TILT, 0, Math.PI * 2);
@@ -326,16 +357,27 @@ function drawRest(ctx, cx, sMid, duration, staffTop) {
   const baseDur = dotted ? DOTTED.get(Math.round(duration * 1000) / 1000) : duration;
 
   if (baseDur >= 4) {
-    const ry = staffTop + LS - 1;
-    ctx.fillRect(cx - 7, ry, 14, 6);
+    // Whole rest: filled rectangle hanging from 2nd line
+    ctx.fillRect(cx - 7, staffTop + LS - 1, 14, 6);
   } else if (baseDur >= 2) {
     ctx.fillRect(cx - 7, sMid - 6, 14, 6);
-  } else if (baseDur >= 1) {
-    drawQuarterRest(ctx, cx, sMid);
-  } else if (baseDur >= 0.5) {
-    drawEighthRest(ctx, cx, sMid);
+  } else if (_bravuraLoaded) {
+    // Quarter / eighth / sixteenth: use Bravura SMuFL glyph
+    const glyph = baseDur >= 1 ? GLYPH_REST_QUARTER
+                : baseDur >= 0.5 ? GLYPH_REST_EIGHTH
+                : GLYPH_REST_SIXTEENTH;
+    ctx.font         = `${BRAVURA_SIZE}px Bravura`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'alphabetic';
+    // Compute visual center of the glyph and position it at sMid
+    const m     = ctx.measureText(glyph);
+    const drawY = sMid + (m.actualBoundingBoxAscent - m.actualBoundingBoxDescent) / 2;
+    ctx.fillText(glyph, cx, drawY);
   } else {
-    drawSixteenthRest(ctx, cx, sMid);
+    // Bravura not loaded yet — bezier fallback
+    if (baseDur >= 1) drawQuarterRest(ctx, cx, sMid);
+    else if (baseDur >= 0.5) drawEighthRest(ctx, cx, sMid);
+    else drawSixteenthRest(ctx, cx, sMid);
   }
 
   if (dotted) {
@@ -349,45 +391,75 @@ function drawRest(ctx, cx, sMid, duration, staffTop) {
 }
 
 function drawQuarterRest(ctx, cx, cy) {
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 2;
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  const top = cy - LS * 1.4;
+  const bot = cy + LS * 1.1;
+
+  // Short flag angling upper-right
   ctx.beginPath();
-  ctx.moveTo(cx - 3, cy - 14);
-  ctx.lineTo(cx + 5, cy - 8);
-  ctx.lineTo(cx - 4, cy - 1);
+  ctx.moveTo(cx - 4, top);
+  ctx.lineTo(cx + 6, top + LS * 0.55);
   ctx.stroke();
+
+  // Diagonal slash down-left
   ctx.beginPath();
-  ctx.moveTo(cx - 4, cy - 1);
-  ctx.bezierCurveTo(cx + 9, cy + 2, cx + 3, cy + 11, cx - 2, cy + 13);
+  ctx.moveTo(cx + 4, top + LS * 0.45);
+  ctx.lineTo(cx - 4, top + LS * 1.15);
   ctx.stroke();
+
+  // Hook sweeping right then down into terminal dot
   ctx.beginPath();
-  ctx.arc(cx - 1, cy + 13, 2.5, 0, Math.PI * 2);
+  ctx.moveTo(cx - 3, top + LS * 1.05);
+  ctx.bezierCurveTo(
+    cx + 9, top + LS * 1.1,
+    cx + 8, top + LS * 1.85,
+    cx,     bot
+  );
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(cx, bot, 2.5, 0, Math.PI * 2);
   ctx.fill();
 }
 
 function drawEighthRest(ctx, cx, cy) {
+  // Eighth rest: filled blob at upper-right + diagonal stem to lower-left
+  const dotX = cx + 4;
+  const dotY = cy - LS * 0.8;
+
   ctx.beginPath();
-  ctx.arc(cx + 2, cy - 9, 3, 0, Math.PI * 2);
+  ctx.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.lineWidth = 1.8;
+
+  ctx.lineWidth = 2;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(cx + 2, cy - 9);
-  ctx.lineTo(cx - 3, cy + 4);
+  ctx.moveTo(dotX, dotY + 3);
+  ctx.lineTo(cx - 3, cy + LS * 0.75);
   ctx.stroke();
 }
 
 function drawSixteenthRest(ctx, cx, cy) {
+  // Sixteenth rest: two blobs + longer diagonal stem
+  const dot1X = cx + 4;
+  const dot1Y = cy - LS * 1.6;
+  const dot2X = cx + 4;
+  const dot2Y = cy - LS * 0.55;
+
   ctx.beginPath();
-  ctx.arc(cx + 2, cy - 9,  3, 0, Math.PI * 2);
+  ctx.arc(dot1X, dot1Y, 3.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(cx + 2, cy - 17, 3, 0, Math.PI * 2);
+  ctx.arc(dot2X, dot2Y, 3.5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.lineWidth = 1.8;
+
+  ctx.lineWidth = 2;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.moveTo(cx + 2, cy - 17);
-  ctx.lineTo(cx - 3, cy + 4);
+  ctx.moveTo(dot1X, dot1Y + 3);
+  ctx.lineTo(cx - 3, cy + LS * 0.75);
   ctx.stroke();
 }

@@ -1,5 +1,6 @@
 import { getStore } from "@netlify/blobs";
 
+// Hand-curated lists — every combination is school-safe
 const ADJECTIVES = [
   "Brave", "Calm", "Bold", "Quick", "Wise", "Bright", "Swift", "Keen",
   "Proud", "Glad", "Warm", "Cool", "Kind", "Fair", "Sharp", "Steady",
@@ -25,6 +26,7 @@ export default async (req) => {
 
   const { score, rhythm, date } = body;
 
+  // Validate inputs
   if (typeof score !== "number" || score < 0 || score > 100) {
     return new Response("Invalid score", { status: 400 });
   }
