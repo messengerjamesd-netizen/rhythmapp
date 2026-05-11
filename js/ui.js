@@ -255,15 +255,15 @@ export function renderLeaderboard(container, entries) {
   }
 
   entries.slice(0, 10).forEach((entry, i) => {
-    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : (i + 1) + ".";
     const div = document.createElement("div");
     div.className = "leaderboard-entry";
-    div.innerHTML = `
-      <span class="lb-rank ${i < 3 ? "top" : ""}">${medal}</span>
-      <span class="lb-name">${esc(entry.name)}</span>
-      <span class="lb-score">${entry.score}%</span>
-      <span class="lb-grade">${gradeLabel(entry.score)}</span>
-    `;
+    const rankClass = i < 3 ? "lb-rank top" : "lb-rank";
+    div.innerHTML =
+      '<span class="' + rankClass + '">' + medal + '</span>' +
+      '<span class="lb-name">' + esc(entry.name) + '</span>' +
+      '<span class="lb-score">' + entry.score + '%</span>' +
+      '<span class="lb-grade">' + gradeLabel(entry.score) + '</span>';
     container.appendChild(div);
   });
 }

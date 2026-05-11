@@ -319,6 +319,7 @@ async function onStartClick() {
 }
 
 function startCountdown() {
+  document.querySelector(".staff-wrap")?.scrollIntoView({ behavior: "smooth", block: "start" });
   setState(isCalibrating ? STATE.CALIBRATING : STATE.COUNTDOWN);
   const bpm          = getBpm();
   const beatSec      = 60 / bpm;
