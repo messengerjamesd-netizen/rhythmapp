@@ -464,7 +464,7 @@ function finishRecording() {
   if (isChallengeMode) {
     isChallengeMode = false;
     challengeSubmitWrap.style.display = "";
-    lbNameInput.focus();
+    lbSubmitBtn.focus();
   }
 }
 
