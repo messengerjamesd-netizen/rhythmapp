@@ -196,7 +196,10 @@ async function submitScore(score, rhythm) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ score, rhythm, date: todayStr() }),
   });
-  if (!res.ok) throw new Error("Submit failed");
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}${detail ? ": " + detail : ""}`);
+  }
   return await res.json(); // { name, entries }
 }
 
@@ -247,10 +250,10 @@ lbSubmitBtn.addEventListener("click", async () => {
     lbNameReveal.textContent = `You're on the board as ${name}!`;
     lbNameReveal.style.display = "";
     document.getElementById("challenge-section").scrollIntoView({ behavior: "smooth" });
-  } catch {
+  } catch (err) {
     lbSubmitBtn.textContent = "Submit Score";
     lbSubmitBtn.disabled = false;
-    lbNameReveal.textContent = "Couldn't reach the leaderboard — check your connection.";
+    lbNameReveal.textContent = "Couldn't submit: " + (err.message || "network error");
     lbNameReveal.style.display = "";
   }
 });
