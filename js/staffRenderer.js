@@ -51,16 +51,15 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
   const H = displayH;
 
   // ── Staff geometry ──
-  // Center the 5 lines vertically; stems go up so we need more space above
-  const staffTop = Math.round(H / 2 - LS);   // line 0 (top line)
-  const sMid     = staffTop + 2 * LS;         // line 2 (middle) — all notes land here
-  const sBot     = staffTop + 4 * LS;         // line 4 (bottom line)
+  const staffTop = Math.round(H / 2 - LS);
+  const sMid     = staffTop + 2 * LS;
+  const sBot     = staffTop + 4 * LS;
 
   // ── Header widths ──
   const MARGIN    = 10;
-  const CLEF_W    = 24;   // percussion clef
-  const TIMESIG_W = 28;   // time signature numbers
-  const contentX  = MARGIN + CLEF_W + TIMESIG_W + 6; // where notes start
+  const CLEF_W    = 24;
+  const TIMESIG_W = 28;
+  const contentX  = MARGIN + CLEF_W + TIMESIG_W + 6;
 
   // ── Draw 5 staff lines ──
   ctx.save();
@@ -93,7 +92,6 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const tsX = MARGIN + CLEF_W + 14;
-  // Draw top number
   ctx.font = `bold ${Math.round(LS * 2)}px Georgia, serif`;
   ctx.fillText(String(timeSig.beats), tsX, staffTop + LS * 0.9);
   ctx.fillText(String(timeSig.value), tsX, staffTop + LS * 2.9);
@@ -103,12 +101,9 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
   // ── Layout notes ──
   const totalDur  = pattern.reduce((s, e) => s + e.duration, 0);
   const availW    = W - contentX - MARGIN;
-
-  // Minimum px per quarter beat for readability
   const minPxPerBeat = 40;
   const pxPerBeat = Math.max(availW / totalDur, minPxPerBeat);
 
-  // Build positioned array with beat-start tracking
   let beatCursor = 0;
   const positioned = pattern.map((event) => {
     const xCenter = contentX + beatCursor * pxPerBeat + (event.duration * pxPerBeat) / 2;
@@ -117,15 +112,13 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
     return obj;
   });
 
-  // ── Measure bar lines (at each full measure boundary) ──
+  // ── Measure bar lines ──
   ctx.save();
   ctx.strokeStyle = STAFF_COLOR;
   ctx.lineWidth = 1;
-  positioned.forEach((pos, i) => {
-    // After each event, check if we've landed exactly on a measure boundary
+  positioned.forEach((pos) => {
     const endBeat = pos.beatStart + pos.event.duration;
     const onBoundary = Math.abs(endBeat % timeSig.beats) < 0.001;
-    // Don't draw at the very start or at the final double-bar position
     if (onBoundary && endBeat > 0 && endBeat < totalDur - 0.001) {
       const barX = contentX + endBeat * pxPerBeat;
       ctx.beginPath();
@@ -136,13 +129,11 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
   });
   ctx.restore();
 
-  // ── Find beam groups (consecutive beamable notes, split at beat boundaries) ──
+  // ── Find beam groups ──
   const beamGroups = findBeamGroups(positioned, timeSig);
-
-  // Set of xCenter values that belong to a beam group (won't draw individual stem/flag)
   const beamedSet = new Set(beamGroups.flatMap((g) => g.map((p) => p.xCenter)));
 
-  // ── Draw beams and their stems (before note heads so heads sit on top) ──
+  // ── Draw beams and stems ──
   ctx.save();
   ctx.fillStyle   = NOTE_COLOR;
   ctx.strokeStyle = NOTE_COLOR;
@@ -153,40 +144,35 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
     const x0 = group[0].xCenter + NRX;
     const xN = group[group.length - 1].xCenter + NRX;
 
-    // Primary beam (all groups — eighths and shorter)
+    // Primary beam
     ctx.fillRect(x0, stemTipY, xN - x0 + 1, BEAM_W);
 
-    // Secondary beam for sixteenth-or-shorter notes in the group.
-    // Also draws a stub beam connecting a dotted-eighth to its paired sixteenth.
-    const hasSixteenth = group.some((p) => p.event.duration <= 0.25);
+    // Secondary beam: only for notes shorter than an eighth (< 0.5 beats).
+    // Dotted eighths (0.75) are eighth-value and carry only the primary beam.
+    const hasSixteenth = group.some((p) => p.event.duration < 0.5);
     if (hasSixteenth) {
       for (let i = 0; i < group.length; i++) {
         const dur = group[i].event.duration;
-        // Skip plain eighths — they only carry the primary beam
-        if (Math.abs(dur - 0.5) < 0.001) continue;
+        // Skip eighth-value and longer (plain eighth, dotted eighth)
+        if (dur >= 0.5) continue;
         const sx = group[i].xCenter + NRX;
-        const nextNeedsSecondary = i < group.length - 1 &&
-          Math.abs(group[i + 1].event.duration - 0.5) >= 0.001;
-        const prevConnectedHere = i > 0 &&
-          Math.abs(group[i - 1].event.duration - 0.5) >= 0.001;
+        const nextNeedsSecondary = i < group.length - 1 && group[i + 1].event.duration < 0.5;
+        const prevConnectedHere  = i > 0             && group[i - 1].event.duration < 0.5;
 
         if (nextNeedsSecondary) {
-          // Full segment to adjacent secondary-beam note
           const nx = group[i + 1].xCenter + NRX;
           ctx.fillRect(sx, stemTipY + BEAM_W + BEAM_GAP, nx - sx + 1, BEAM_W);
         } else if (!prevConnectedHere) {
-          // Isolated or leading secondary-beam note — stub direction depends on position
           if (i === 0) {
             ctx.fillRect(sx,      stemTipY + BEAM_W + BEAM_GAP, 11, BEAM_W); // stub right
           } else {
             ctx.fillRect(sx - 10, stemTipY + BEAM_W + BEAM_GAP, 11, BEAM_W); // stub left
           }
         }
-        // else: previous iteration already drew a segment ending at this stem — nothing to add
       }
     }
 
-    // Stems for all notes in this beam group
+    // Stems
     group.forEach((pos) => {
       const sx = pos.xCenter + NRX;
       ctx.beginPath();
@@ -220,29 +206,23 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
 
 // ── Beam group finder ──────────────────────────────────────────────────────────────
 
-/**
- * Groups consecutive beamable notes that fall within the same beat.
- * Beat = 1 quarter note. This gives clean pairs/quads per beat.
- */
 function findBeamGroups(positioned, timeSig) {
   const groups = [];
   let currentGroup = [];
   let currentBeat  = -1;
 
   positioned.forEach((pos) => {
-    const beatIdx = Math.floor(pos.beatStart); // which beat this note starts on
+    const beatIdx = Math.floor(pos.beatStart);
     if (isBeamable(pos.event.duration) && pos.event.type === "note") {
       if (beatIdx === currentBeat || currentGroup.length === 0) {
         currentGroup.push(pos);
         currentBeat = beatIdx;
       } else {
-        // Different beat — flush and start new group
         if (currentGroup.length >= 2) groups.push([...currentGroup]);
         currentGroup = [pos];
         currentBeat  = beatIdx;
       }
     } else {
-      // Non-beamable event flushes the current group
       if (currentGroup.length >= 2) groups.push([...currentGroup]);
       currentGroup = [];
       currentBeat  = -1;
@@ -263,57 +243,46 @@ function drawNote(ctx, cx, noteY, duration, isBeamed, staffTop) {
   const dotted  = DOTTED.has(Math.round(duration * 1000) / 1000);
   const baseDur = dotted ? DOTTED.get(Math.round(duration * 1000) / 1000) : duration;
 
-  // ── Note head ──
   if (baseDur >= 4) {
-    // Whole note: wider open oval, no stem
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.ellipse(cx, noteY, NRX + 2, NRY, HEAD_TILT, 0, Math.PI * 2);
     ctx.stroke();
-    // Inner cutout to distinguish from half note
     ctx.fillStyle = CANVAS_BG;
     ctx.beginPath();
     ctx.ellipse(cx + 1, noteY, NRX - 1, NRY - 1.5, HEAD_TILT, 0, Math.PI * 2);
     ctx.fill();
   } else if (baseDur >= 2) {
-    // Half note: open oval + stem
     ctx.lineWidth = 1.8;
     ctx.beginPath();
     ctx.ellipse(cx, noteY, NRX, NRY, HEAD_TILT, 0, Math.PI * 2);
     ctx.stroke();
-    // Stem
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(cx + NRX - 1, noteY);
     ctx.lineTo(cx + NRX - 1, noteY - STEM_H);
     ctx.stroke();
   } else {
-    // Filled head (quarter, eighth, sixteenth)
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.ellipse(cx, noteY, NRX, NRY, HEAD_TILT, 0, Math.PI * 2);
     ctx.fill();
 
     if (!isBeamed) {
-      // Individual stem
       ctx.lineWidth = 1.5;
       const sx = cx + NRX - 1;
       ctx.beginPath();
       ctx.moveTo(sx, noteY);
       ctx.lineTo(sx, noteY - STEM_H);
       ctx.stroke();
-
-      // Flag(s) for unbeamed short notes
       if (baseDur <= 0.5) {
         drawFlag(ctx, sx, noteY - STEM_H, baseDur);
       }
     }
   }
 
-  // ── Dot (for dotted durations) ──
   if (dotted) {
     ctx.fillStyle = NOTE_COLOR;
-    // Place dot in the space above the middle line (avoids sitting on a staff line)
     ctx.beginPath();
     ctx.arc(cx + NRX + 5, noteY - LS * 0.5, 2.2, 0, Math.PI * 2);
     ctx.fill();
@@ -323,7 +292,6 @@ function drawNote(ctx, cx, noteY, duration, isBeamed, staffTop) {
 }
 
 function drawFlag(ctx, stemTipX, stemTipY, baseDur) {
-  // Eighth note flag — smooth S-curve
   ctx.strokeStyle = NOTE_COLOR;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -335,7 +303,6 @@ function drawFlag(ctx, stemTipX, stemTipY, baseDur) {
   );
   ctx.stroke();
 
-  // Second flag for sixteenth
   if (baseDur <= 0.25) {
     ctx.beginPath();
     ctx.moveTo(stemTipX, stemTipY + 8);
@@ -359,11 +326,9 @@ function drawRest(ctx, cx, sMid, duration, staffTop) {
   const baseDur = dotted ? DOTTED.get(Math.round(duration * 1000) / 1000) : duration;
 
   if (baseDur >= 4) {
-    // Whole rest: filled rectangle hanging from line 1 (second from top)
     const ry = staffTop + LS - 1;
     ctx.fillRect(cx - 7, ry, 14, 6);
   } else if (baseDur >= 2) {
-    // Half rest: filled rectangle sitting on middle line
     ctx.fillRect(cx - 7, sMid - 6, 14, 6);
   } else if (baseDur >= 1) {
     drawQuarterRest(ctx, cx, sMid);
@@ -373,7 +338,6 @@ function drawRest(ctx, cx, sMid, duration, staffTop) {
     drawSixteenthRest(ctx, cx, sMid);
   }
 
-  // Dot for dotted rests
   if (dotted) {
     ctx.fillStyle = NOTE_COLOR;
     ctx.beginPath();
@@ -385,36 +349,26 @@ function drawRest(ctx, cx, sMid, duration, staffTop) {
 }
 
 function drawQuarterRest(ctx, cx, cy) {
-  // Classic quarter rest: stylized Z/lightning bolt
   ctx.lineWidth = 1.8;
   ctx.lineCap = "round";
-
   ctx.beginPath();
-  // Top diagonal going right
   ctx.moveTo(cx - 3, cy - 14);
   ctx.lineTo(cx + 5, cy - 8);
-  // Hook back left and down
   ctx.lineTo(cx - 4, cy - 1);
   ctx.stroke();
-
-  // Lower S-curve finishing with a circle
   ctx.beginPath();
   ctx.moveTo(cx - 4, cy - 1);
   ctx.bezierCurveTo(cx + 9, cy + 2, cx + 3, cy + 11, cx - 2, cy + 13);
   ctx.stroke();
-
-  // Terminal dot
   ctx.beginPath();
   ctx.arc(cx - 1, cy + 13, 2.5, 0, Math.PI * 2);
   ctx.fill();
 }
 
 function drawEighthRest(ctx, cx, cy) {
-  // Filled circle at top + diagonal tail
   ctx.beginPath();
   ctx.arc(cx + 2, cy - 9, 3, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.lineWidth = 1.8;
   ctx.lineCap = "round";
   ctx.beginPath();
@@ -424,14 +378,12 @@ function drawEighthRest(ctx, cx, cy) {
 }
 
 function drawSixteenthRest(ctx, cx, cy) {
-  // Two circles + diagonal tail
   ctx.beginPath();
   ctx.arc(cx + 2, cy - 9,  3, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
   ctx.arc(cx + 2, cy - 17, 3, 0, Math.PI * 2);
   ctx.fill();
-
   ctx.lineWidth = 1.8;
   ctx.lineCap = "round";
   ctx.beginPath();
