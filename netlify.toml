@@ -1,0 +1,9 @@
+[build]
+  publish = "."
+  # No build command — pure static site
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Required for microphone access on the live site
+    Permissions-Policy = "microphone=(*)"

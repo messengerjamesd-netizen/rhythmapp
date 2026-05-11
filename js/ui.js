@@ -4,6 +4,8 @@ import { RHYTHM_LIBRARY } from "./rhythmLibrary.js";
 import { gradeLabel } from "./analysisEngine.js";
 import { renderStaff } from "./staffRenderer.js";
 
+export { gradeLabel };
+
 // ── Rhythm selector (categories + tabs) ──────────────────────────────────────
 
 let _staffCanvas = null;
@@ -14,26 +16,22 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
 
   const categories = Object.keys(RHYTHM_LIBRARY);
 
-  // Tab bar
   const tabBar = document.createElement("div");
   tabBar.className = "category-tabs";
 
-  // Panel area
   const panelWrap = document.createElement("div");
   panelWrap.className = "category-panels";
 
-  let firstBtn  = null;
+  let firstTab  = null;
   let firstPanel = null;
 
   categories.forEach((cat) => {
-    // Tab button
     const tab = document.createElement("button");
     tab.className = "cat-tab";
     tab.textContent = cat;
     tab.dataset.cat = cat;
     tabBar.appendChild(tab);
 
-    // Panel
     const panel = document.createElement("div");
     panel.className = "cat-panel";
     panel.dataset.cat = cat;
@@ -45,7 +43,6 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
       btn.textContent = rhythm.name;
       btn.dataset.name = rhythm.name;
       btn.addEventListener("click", () => {
-        // Deselect all rhythm buttons
         container.querySelectorAll(".rhythm-btn").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         onChange(rhythm);
@@ -56,23 +53,53 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
     panelWrap.appendChild(panel);
 
     tab.addEventListener("click", () => {
-      // Switch active tab
       tabBar.querySelectorAll(".cat-tab").forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
       panelWrap.querySelectorAll(".cat-panel").forEach((p) => { p.hidden = true; });
       panel.hidden = false;
     });
 
-    if (!firstBtn) { firstBtn = tab; firstPanel = panel; }
+    if (!firstTab) { firstTab = tab; firstPanel = panel; }
   });
+
+  // Random button
+  const actions = document.createElement("div");
+  actions.className = "selector-actions";
+  const randomBtn = document.createElement("button");
+  randomBtn.className = "random-btn";
+  randomBtn.textContent = "🎲 Random";
+  randomBtn.title = "Pick a random rhythm from this category";
+  randomBtn.addEventListener("click", () => {
+    const activePanel = panelWrap.querySelector(".cat-panel:not([hidden])");
+    if (!activePanel) return;
+    const btns = activePanel.querySelectorAll(".rhythm-btn");
+    if (!btns.length) return;
+    btns[Math.floor(Math.random() * btns.length)].click();
+  });
+  actions.appendChild(randomBtn);
+  tabBar.appendChild(actions);
 
   container.appendChild(tabBar);
   container.appendChild(panelWrap);
 
-  // Activate first tab and first rhythm
-  firstBtn.classList.add("active");
+  firstTab.classList.add("active");
   firstPanel.hidden = false;
   firstPanel.querySelector(".rhythm-btn").click();
+}
+
+export function selectRhythmByName(container, name) {
+  const btn = Array.from(container.querySelectorAll(".rhythm-btn"))
+                   .find((b) => b.dataset.name === name);
+  if (!btn) return;
+
+  const panel = btn.closest(".cat-panel");
+  const cat   = panel?.dataset.cat;
+  if (cat) {
+    const tab = Array.from(container.querySelectorAll(".cat-tab"))
+                     .find((t) => t.dataset.cat === cat);
+    if (tab) tab.click();
+  }
+  btn.click();
 }
 
 // ── Staff notation rendering ──────────────────────────────────────────────────
@@ -157,7 +184,6 @@ export function renderResults(container, analysis, totalDurationMs) {
   const { results, accuracy, extraClaps } = analysis;
   container.innerHTML = "";
 
-  // Score header
   const scoreEl = document.createElement("div");
   scoreEl.className = "score-header";
   scoreEl.innerHTML = `
@@ -166,7 +192,6 @@ export function renderResults(container, analysis, totalDurationMs) {
   `;
   container.appendChild(scoreEl);
 
-  // Per-note breakdown
   const breakdown = document.createElement("div");
   breakdown.className = "breakdown";
   results.forEach((r, i) => {
@@ -186,7 +211,6 @@ export function renderResults(container, analysis, totalDurationMs) {
   });
   container.appendChild(breakdown);
 
-  // Timeline visualization
   const timelineWrap = document.createElement("div");
   timelineWrap.className = "timeline-wrap";
   timelineWrap.innerHTML = "<div class='timeline-label'>Timeline — ▲ expected &nbsp; ● actual clap</div>";
@@ -208,6 +232,40 @@ export function renderResults(container, analysis, totalDurationMs) {
   }
 }
 
+// ── Leaderboard rendering ─────────────────────────────────────────────────────
+
+export function renderLeaderboard(container, entries) {
+  container.innerHTML = "";
+  if (!entries.length) {
+    const p = document.createElement("p");
+    p.className = "leaderboard-empty";
+    p.textContent = "No scores yet — attempt today's challenge!";
+    container.appendChild(p);
+    return;
+  }
+
+  entries.slice(0, 10).forEach((entry, i) => {
+    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+    const div = document.createElement("div");
+    div.className = "leaderboard-entry";
+    div.innerHTML = `
+      <span class="lb-rank ${i < 3 ? "top" : "}">${medal}</span>
+      <span class="lb-name">${esc(entry.name)}</span>
+      <span class="lb-score">${entry.score}%</span>
+      <span class="lb-grade">${gradeLabel(entry.score)}</span>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function esc(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function drawTimeline(canvas, results, extraClaps, totalMs) {
   const dpr = window.devicePixelRatio || 1;
   const W   = canvas.parentElement ? canvas.parentElement.clientWidth : 600;
@@ -225,7 +283,6 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
 
   ctx.clearRect(0, 0, W, H);
 
-  // Baseline
   ctx.strokeStyle = "#444";
   ctx.lineWidth   = 1;
   ctx.beginPath();
@@ -233,8 +290,6 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
   ctx.lineTo(W - 10, H / 2);
   ctx.stroke();
 
-  // Tolerance bands — each note uses its own per-note tolerance so bands
-  // never overlap even for dense sixteenth-note patterns
   results.forEach((r) => {
     const x    = toX(r.expected);
     const tolW = (r.tolerance / totalMs) * usableW;
@@ -242,7 +297,6 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
     ctx.fillRect(x - tolW, H / 2 - 14, tolW * 2, 28);
   });
 
-  // Expected beats (triangles above line)
   results.forEach((r) => {
     const x = toX(r.expected);
     ctx.fillStyle = "#7eb8f7";
@@ -254,7 +308,6 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
     ctx.fill();
   });
 
-  // Actual claps (circles below line), color-coded
   const colorMap = { correct: "#4caf50", early: "#ff9800", late: "#e53935", missed: "#888" };
   results.forEach((r) => {
     if (r.actual === null) return;
@@ -265,7 +318,6 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
     ctx.fill();
   });
 
-  // Extra claps (grey, smaller)
   extraClaps.forEach((t) => {
     const x = toX(Math.max(0, Math.min(totalMs, t)));
     ctx.fillStyle = "#555";
