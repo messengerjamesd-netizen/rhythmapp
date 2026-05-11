@@ -283,6 +283,9 @@ function applyInputMode() {
   modeMicBtn.classList.toggle("active",   isMic);
   modeSpaceBtn.classList.toggle("active", !isMic);
   micControls.style.display = isMic ? "" : "none";
+  calibrateBtn.textContent = isMic ? "🎯 Calibrate Mic" : "🎯 Calibrate Spacebar";
+  const tipLink = document.getElementById("challenge-calibrate-btn");
+  if (tipLink) tipLink.textContent = isMic ? "calibrate your mic" : "calibrate your spacebar timing";
   updateOffsetDisplay();
 }
 

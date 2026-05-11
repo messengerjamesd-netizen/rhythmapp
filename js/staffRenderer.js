@@ -28,9 +28,8 @@ const DOTTED = new Map([
 
 // ── Bravura music font (SMuFL) ────────────────────────────────────────────────
 
-// Bravura is designed at 2048 UPM with 250 design units per staff space,
-// so the correct canvas font-size to match our LS staff spacing is:
-const BRAVURA_SIZE = Math.round(LS * 2048 / 250); // ~90 px for LS=11
+// 4 * LS matches the VexFlow-packaged Bravura's effective glyph scaling
+const BRAVURA_SIZE = 4 * LS; // 44 px for LS=11
 
 const GLYPH_REST_QUARTER   = '';
 const GLYPH_REST_EIGHTH    = '';
@@ -366,7 +365,7 @@ function drawRest(ctx, cx, sMid, duration, staffTop) {
     const glyph = baseDur >= 1 ? GLYPH_REST_QUARTER
                 : baseDur >= 0.5 ? GLYPH_REST_EIGHTH
                 : GLYPH_REST_SIXTEENTH;
-    ctx.font         = `${BRAVURA_SIZE}px Bravura`;
+    ctx.font         = `normal ${BRAVURA_SIZE}px Bravura`;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'alphabetic';
     // Compute visual center of the glyph and position it at sMid
