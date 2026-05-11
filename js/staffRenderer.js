@@ -162,13 +162,11 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
     if (hasSixteenth) {
       for (let i = 0; i < group.length; i++) {
         const dur = group[i].event.duration;
-        // Skip plain eighths — they only carry the primary beam
-        if (Math.abs(dur - 0.5) < 0.001) continue;
+        // Skip eighth-value and longer (plain eighth, dotted eighth) — primary beam only
+        if (dur >= 0.5) continue;
         const sx = group[i].xCenter + NRX;
-        const nextNeedsSecondary = i < group.length - 1 &&
-          Math.abs(group[i + 1].event.duration - 0.5) >= 0.001;
-        const prevConnectedHere = i > 0 &&
-          Math.abs(group[i - 1].event.duration - 0.5) >= 0.001;
+        const nextNeedsSecondary = i < group.length - 1 && group[i + 1].event.duration < 0.5;
+        const prevConnectedHere  = i > 0             && group[i - 1].event.duration < 0.5;
 
         if (nextNeedsSecondary) {
           // Full segment to adjacent secondary-beam note
