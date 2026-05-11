@@ -162,12 +162,27 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
     if (hasSixteenth) {
       for (let i = 0; i < group.length; i++) {
         const dur = group[i].event.duration;
-        // Skip plain eighths (0.5) — they only carry the primary beam
+        // Skip plain eighths — they only carry the primary beam
         if (Math.abs(dur - 0.5) < 0.001) continue;
-        const segX0 = group[i].xCenter + NRX;
-        // Connect to next note, or draw a short stub at the end of the group
-        const segX1 = i < group.length - 1 ? group[i + 1].xCenter + NRX : segX0 + 10;
-        ctx.fillRect(segX0, stemTipY + BEAM_W + BEAM_GAP, segX1 - segX0 + 1, BEAM_W);
+        const sx = group[i].xCenter + NRX;
+        const nextNeedsSecondary = i < group.length - 1 &&
+          Math.abs(group[i + 1].event.duration - 0.5) >= 0.001;
+        const prevConnectedHere = i > 0 &&
+          Math.abs(group[i - 1].event.duration - 0.5) >= 0.001;
+
+        if (nextNeedsSecondary) {
+          // Full segment to adjacent secondary-beam note
+          const nx = group[i + 1].xCenter + NRX;
+          ctx.fillRect(sx, stemTipY + BEAM_W + BEAM_GAP, nx - sx + 1, BEAM_W);
+        } else if (!prevConnectedHere) {
+          // Isolated or leading secondary-beam note — stub direction depends on position
+          if (i === 0) {
+            ctx.fillRect(sx,      stemTipY + BEAM_W + BEAM_GAP, 11, BEAM_W); // stub right
+          } else {
+            ctx.fillRect(sx - 10, stemTipY + BEAM_W + BEAM_GAP, 11, BEAM_W); // stub left
+          }
+        }
+        // else: previous iteration already drew a segment ending at this stem — nothing to add
       }
     }
 
