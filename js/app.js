@@ -101,8 +101,8 @@ const challengeNameEl     = document.getElementById("challenge-rhythm-name");
 const challengeDiffEl     = document.getElementById("challenge-difficulty");
 const leaderboardListEl   = document.getElementById("leaderboard-list");
 const challengeSubmitWrap = document.getElementById("challenge-submit-wrap");
-const lbNameInput         = document.getElementById("lb-name-input");
 const lbSubmitBtn         = document.getElementById("lb-submit-btn");
+const lbNameReveal        = document.getElementById("lb-name-reveal");
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -117,7 +117,7 @@ buildRhythmSelector(rhythmSel, staffCanvas, (rhythm) => {
   isChallengeMode = false;
 });
 
-initChallenge();
+initChallenge(); // async, leaderboard loads in background
 
 bpmInput.addEventListener("input", () => {
   if (currentRhythm) renderBlocks(blockViz, currentRhythm.pattern, getBpm());
@@ -166,7 +166,6 @@ function getDailyChallengeRhythm() {
   for (let i = 0; i < dateStr.length; i++) {
     hash = ((hash << 5) - hash + dateStr.charCodeAt(i)) | 0;
   }
-  // Pull from Intermediate + Advanced only
   const pool = [
     ...(RHYTHM_LIBRARY["Intermediate"] || []),
     ...(RHYTHM_LIBRARY["Advanced"]     || []),
@@ -174,39 +173,45 @@ function getDailyChallengeRhythm() {
   return pool[Math.abs(hash) % pool.length];
 }
 
-function todayKey() {
-  const n = new Date();
-  return `rhythmapp_challenge_${n.getFullYear()}-${n.getMonth()}-${n.getDate()}`;
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function loadLeaderboard() {
-  try { return JSON.parse(localStorage.getItem(todayKey()) || "[]"); }
-  catch { return []; }
+async function fetchLeaderboard() {
+  try {
+    const res = await fetch(`/api/leaderboard?date=${todayStr()}`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch {
+    return [];
+  }
 }
 
-function saveScore(name, score) {
-  const entries = loadLeaderboard();
-  entries.push({ name: name.trim() || "Anonymous", score });
-  entries.sort((a, b) => b.score - a.score);
-  localStorage.setItem(todayKey(), JSON.stringify(entries.slice(0, 20)));
-  return entries;
+async function submitScore(score, rhythm) {
+  const res = await fetch("/api/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ score, rhythm, date: todayStr() }),
+  });
+  if (!res.ok) throw new Error("Submit failed");
+  return await res.json(); // { name, entries }
 }
 
-function initChallenge() {
+async function initChallenge() {
   dailyChallenge = getDailyChallengeRhythm();
 
-  // Determine which category this rhythm belongs to
   let diffLabel = "";
   for (const [cat, rhythms] of Object.entries(RHYTHM_LIBRARY)) {
     if (rhythms.some((r) => r.name === dailyChallenge.name)) { diffLabel = cat; break; }
   }
 
   const today = new Date();
-  challengeDateEl.textContent  = today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  challengeNameEl.textContent  = dailyChallenge.name;
-  challengeDiffEl.textContent  = diffLabel;
+  challengeDateEl.textContent = today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  challengeNameEl.textContent = dailyChallenge.name;
+  challengeDiffEl.textContent = diffLabel;
 
-  renderLeaderboard(leaderboardListEl, loadLeaderboard());
+  renderLeaderboard(leaderboardListEl, await fetchLeaderboard());
 }
 
 // ── Challenge attempt ─────────────────────────────────────────────────────────
@@ -220,21 +225,32 @@ challengeBtn.addEventListener("click", async () => {
   updateStaff(currentRhythm.pattern, currentRhythm.timeSig);
   renderBlocks(blockViz, currentRhythm.pattern, getBpm());
 
-  // Clear any previous challenge submit form
+  // Reset submit UI for new attempt
   challengeSubmitWrap.style.display = "none";
+  lbNameReveal.style.display = "none";
+  lbSubmitBtn.disabled = false;
+  lbSubmitBtn.textContent = "Submit Score";
   isChallengeMode = true;
 
   await onStartClick();
 });
 
-lbSubmitBtn.addEventListener("click", () => {
-  const name    = lbNameInput.value;
-  const entries = saveScore(name, lastAnalysis.accuracy);
-  renderLeaderboard(leaderboardListEl, entries);
-  challengeSubmitWrap.style.display = "none";
-  lbNameInput.value = "";
-  // Scroll to leaderboard
-  document.getElementById("challenge-section").scrollIntoView({ behavior: "smooth" });
+lbSubmitBtn.addEventListener("click", async () => {
+  lbSubmitBtn.disabled = true;
+  lbSubmitBtn.textContent = "Submitting…";
+  try {
+    const { name, entries } = await submitScore(lastAnalysis.accuracy, currentRhythm.name);
+    renderLeaderboard(leaderboardListEl, entries);
+    challengeSubmitWrap.style.display = "none";
+    lbNameReveal.textContent = `You're on the board as ${name}!`;
+    lbNameReveal.style.display = "";
+    document.getElementById("challenge-section").scrollIntoView({ behavior: "smooth" });
+  } catch {
+    lbSubmitBtn.textContent = "Submit Score";
+    lbSubmitBtn.disabled = false;
+    lbNameReveal.textContent = "Couldn't reach the leaderboard — check your connection.";
+    lbNameReveal.style.display = "";
+  }
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

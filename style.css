@@ -540,19 +540,13 @@ kbd {
   margin-bottom: 4px;
 }
 
-.challenge-submit input[type="text"] {
-  background: var(--surface2);
-  border: 1px solid #3a3d55;
-  color: var(--text);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 0.95rem;
-  flex: 1;
-  min-width: 160px;
-  max-width: 280px;
-  outline: none;
+.lb-name-reveal {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: var(--accent);
+  font-weight: 600;
 }
-.challenge-submit input[type="text"]:focus { border-color: var(--accent); }
 
 /* ── Responsive ───────────────────────────────────────────────── */
 @media (max-width: 600px) {
