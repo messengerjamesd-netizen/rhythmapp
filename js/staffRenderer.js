@@ -43,7 +43,7 @@ export const bravuraReady = (async () => {
   try {
     const face = new FontFace(
       'Bravura',
-      "url('https://cdn.jsdelivr.net/npm/@vexflow-fonts/bravura/bravura.woff2')",
+      "url('/fonts/bravura.woff2')",
     );
     await face.load();
     document.fonts.add(face);
