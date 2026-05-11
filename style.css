@@ -491,8 +491,12 @@ kbd {
 }
 
 .calibrate-tip {
-  font-size: 0.85rem;
-  color: var(--muted);
+  font-size: 0.88rem;
+  color: var(--text);
+  background: var(--surface2);
+  border-left: 3px solid var(--accent);
+  padding: 8px 12px;
+  border-radius: 0 6px 6px 0;
   margin-bottom: 14px;
 }
 

@@ -292,7 +292,8 @@ function applyInputMode() {
   modeMicBtn.classList.toggle("active",   isMic);
   modeSpaceBtn.classList.toggle("active", !isMic);
   micControls.style.display = isMic ? "" : "none";
-  // Calibrate button and offset display are useful in both modes
+  const calibrateTip = document.getElementById("challenge-calibrate-btn")?.closest(".calibrate-tip");
+  if (calibrateTip) calibrateTip.style.display = isMic ? "" : "none";
   updateOffsetDisplay();
 }
 
