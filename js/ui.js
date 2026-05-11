@@ -16,9 +16,11 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
 
   const categories = Object.keys(RHYTHM_LIBRARY);
 
+  // Tab bar + random button wrapper
   const tabBar = document.createElement("div");
   tabBar.className = "category-tabs";
 
+  // Panel area
   const panelWrap = document.createElement("div");
   panelWrap.className = "category-panels";
 
@@ -26,12 +28,14 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
   let firstPanel = null;
 
   categories.forEach((cat) => {
+    // Tab button
     const tab = document.createElement("button");
     tab.className = "cat-tab";
     tab.textContent = cat;
     tab.dataset.cat = cat;
     tabBar.appendChild(tab);
 
+    // Panel
     const panel = document.createElement("div");
     panel.className = "cat-panel";
     panel.dataset.cat = cat;
@@ -62,7 +66,7 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
     if (!firstTab) { firstTab = tab; firstPanel = panel; }
   });
 
-  // Random button
+  // Random button — always picks from the active (visible) panel
   const actions = document.createElement("div");
   actions.className = "selector-actions";
   const randomBtn = document.createElement("button");
@@ -82,24 +86,27 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
   container.appendChild(tabBar);
   container.appendChild(panelWrap);
 
+  // Activate first tab and first rhythm
   firstTab.classList.add("active");
   firstPanel.hidden = false;
   firstPanel.querySelector(".rhythm-btn").click();
 }
 
+// Programmatically select a rhythm by name (used by daily challenge)
 export function selectRhythmByName(container, name) {
   const btn = Array.from(container.querySelectorAll(".rhythm-btn"))
                    .find((b) => b.dataset.name === name);
   if (!btn) return;
 
+  // Activate the tab that owns this button
   const panel = btn.closest(".cat-panel");
   const cat   = panel?.dataset.cat;
   if (cat) {
     const tab = Array.from(container.querySelectorAll(".cat-tab"))
                      .find((t) => t.dataset.cat === cat);
-    if (tab) tab.click();
+    if (tab) tab.click(); // activates tab + shows panel
   }
-  btn.click();
+  btn.click(); // selects rhythm + fires onChange
 }
 
 // ── Staff notation rendering ──────────────────────────────────────────────────
@@ -132,13 +139,13 @@ export function renderBlocks(container, pattern, bpm) {
 }
 
 function durationLabel(beats) {
-  if (beats === 4)    return "𝅝";
-  if (beats === 2)    return "𝅗𝅥";
+  if (beats === 4)    return "\u{1D15D}";
+  if (beats === 2)    return "\u{1D15E}";
   if (beats === 1)    return "♩";
   if (beats === 1.5)  return "♩.";
   if (beats === 0.75) return "♪.";
   if (beats === 0.5)  return "♪";
-  if (beats === 0.25) return "𝅘𝅥𝅯";
+  if (beats === 0.25) return "\u{1D160}";
   return beats;
 }
 
@@ -184,6 +191,7 @@ export function renderResults(container, analysis, totalDurationMs) {
   const { results, accuracy, extraClaps } = analysis;
   container.innerHTML = "";
 
+  // Score header
   const scoreEl = document.createElement("div");
   scoreEl.className = "score-header";
   scoreEl.innerHTML = `
@@ -192,6 +200,7 @@ export function renderResults(container, analysis, totalDurationMs) {
   `;
   container.appendChild(scoreEl);
 
+  // Per-note breakdown
   const breakdown = document.createElement("div");
   breakdown.className = "breakdown";
   results.forEach((r, i) => {
@@ -211,6 +220,7 @@ export function renderResults(container, analysis, totalDurationMs) {
   });
   container.appendChild(breakdown);
 
+  // Timeline visualization
   const timelineWrap = document.createElement("div");
   timelineWrap.className = "timeline-wrap";
   timelineWrap.innerHTML = "<div class='timeline-label'>Timeline — ▲ expected &nbsp; ● actual clap</div>";
@@ -245,15 +255,15 @@ export function renderLeaderboard(container, entries) {
   }
 
   entries.slice(0, 10).forEach((entry, i) => {
-    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : (i + 1) + ".";
     const div = document.createElement("div");
     div.className = "leaderboard-entry";
-    div.innerHTML = `
-      <span class="lb-rank ${i < 3 ? "top" : "}">${medal}</span>
-      <span class="lb-name">${esc(entry.name)}</span>
-      <span class="lb-score">${entry.score}%</span>
-      <span class="lb-grade">${gradeLabel(entry.score)}</span>
-    `;
+    const rankClass = i < 3 ? "lb-rank top" : "lb-rank";
+    div.innerHTML =
+      '<span class="' + rankClass + '">' + medal + '</span>' +
+      '<span class="lb-name">' + esc(entry.name) + '</span>' +
+      '<span class="lb-score">' + entry.score + '%</span>' +
+      '<span class="lb-grade">' + gradeLabel(entry.score) + '</span>';
     container.appendChild(div);
   });
 }
@@ -283,6 +293,7 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
 
   ctx.clearRect(0, 0, W, H);
 
+  // Baseline
   ctx.strokeStyle = "#444";
   ctx.lineWidth   = 1;
   ctx.beginPath();
@@ -290,6 +301,7 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
   ctx.lineTo(W - 10, H / 2);
   ctx.stroke();
 
+  // Tolerance bands
   results.forEach((r) => {
     const x    = toX(r.expected);
     const tolW = (r.tolerance / totalMs) * usableW;
@@ -297,6 +309,7 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
     ctx.fillRect(x - tolW, H / 2 - 14, tolW * 2, 28);
   });
 
+  // Expected beats (triangles above line)
   results.forEach((r) => {
     const x = toX(r.expected);
     ctx.fillStyle = "#7eb8f7";
@@ -308,6 +321,7 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
     ctx.fill();
   });
 
+  // Actual claps (circles below line), color-coded
   const colorMap = { correct: "#4caf50", early: "#ff9800", late: "#e53935", missed: "#888" };
   results.forEach((r) => {
     if (r.actual === null) return;
@@ -318,6 +332,7 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
     ctx.fill();
   });
 
+  // Extra claps (grey, smaller)
   extraClaps.forEach((t) => {
     const x = toX(Math.max(0, Math.min(totalMs, t)));
     ctx.fillStyle = "#555";

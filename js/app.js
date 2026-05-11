@@ -243,6 +243,12 @@ function getBpm() {
   return Math.max(20, Math.min(300, parseInt(bpmInput.value, 10) || 80));
 }
 
+/**
+ * Debounce that scales with the shortest note in the pattern.
+ * Uses 40% of the minimum note gap so all legitimate claps pass through
+ * while accidental double-detections (usually <30ms apart) are still filtered.
+ * Floor of 50ms handles any edge cases; no ceiling so slow tempos work too.
+ */
 function adaptiveDebounceMs(pattern, bpm) {
   const msPerBeat = (60 / bpm) * 1000;
   const minDuration = pattern
@@ -313,6 +319,7 @@ async function onStartClick() {
 }
 
 function startCountdown() {
+  document.querySelector(".staff-wrap")?.scrollIntoView({ behavior: "smooth", block: "start" });
   setState(isCalibrating ? STATE.CALIBRATING : STATE.COUNTDOWN);
   const bpm          = getBpm();
   const beatSec      = 60 / bpm;
@@ -322,18 +329,27 @@ function startCountdown() {
 
   ensureAudioCtx();
 
+  // Pin both clocks at the same instant so we can convert between them later
   const audioNow = audioCtx.currentTime;
   const perfNow  = performance.now();
 
+  // Count-in starts 50ms from now (gives the audio graph time to prepare)
   const countStartAudio = audioNow + 0.05;
 
+  // Schedule all count-in clicks on the Web Audio clock (sample-accurate)
   for (let i = 0; i < beatsPerBar; i++) {
     scheduleCountClick(countStartAudio + i * beatSec, i === 0);
   }
 
+  // The rhythm's beat 1 lands exactly one bar after the count-in begins —
+  // no gap, it's simply the next click in the sequence
   const rhythmStartAudio = countStartAudio + beatsPerBar * beatSec;
+
+  // Convert that audio-clock time to a performance.now() time so we can
+  // align clap timestamps (which use performance.now()) correctly
   const rhythmStartPerf = perfNow + (rhythmStartAudio - audioNow) * 1000;
 
+  // Visual countdown display (driven by setTimeout, just for the numbers)
   let count = beatsPerBar;
   showCountdown(countdownEl, count);
   count--;
@@ -342,11 +358,13 @@ function startCountdown() {
       showCountdown(countdownEl, count);
       count--;
     } else {
-      showCountdown(countdownEl, 0);
+      showCountdown(countdownEl, 0); // "GO!"
       clearInterval(interval);
     }
   }, beatMs);
 
+  // Start recording 30ms before beat 1 so the mic is open and ready.
+  // We pass the pre-calculated anchor times so nothing re-derives the start.
   const msUntilBeat1 = (rhythmStartAudio - audioNow) * 1000;
   setTimeout(() => {
     clearCountdown(countdownEl);
@@ -375,10 +393,11 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
   const quarterBeats = totalBeats(activePattern);
 
   clapTimestamps = [];
+  // Anchor clap timestamps to the exact moment beat 1 is scheduled to sound
   sequenceStartMs     = rhythmStartPerf;
   lastTotalDurationMs = totalDuration;
 
-  lastSpaceMs = -Infinity;
+  lastSpaceMs = -Infinity; // reset spacebar debounce for new session
   currentDebounceMs = adaptiveDebounceMs(activePattern, bpm);
   setState(STATE.RECORDING);
 
@@ -390,6 +409,8 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
     });
   }
 
+  // Pass the same audio-clock anchor so the metronome starts on beat 1
+  // with no gap from the count-in — it's a seamless continuation
   timingEngine.start(
     bpm,
     quarterBeats,
@@ -398,6 +419,7 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
     activeTimeSig.beats
   );
 
+  // Auto-stop after rhythm completes + small buffer
   setTimeout(() => {
     if (state === STATE.RECORDING || state === STATE.CALIBRATING) finishRecording();
   }, totalDuration + 600);
@@ -413,6 +435,7 @@ function finishRecording() {
     return;
   }
 
+  // Apply the offset for whichever input mode is active
   const activeOffset = inputMode === "mic" ? micOffsetMs : spaceOffsetMs;
   const adjustedClaps = clapTimestamps.map((t) => t - activeOffset);
   const { beats } = rhythmToTimestamps(currentRhythm.pattern, getBpm());
@@ -454,6 +477,7 @@ function finishCalibration() {
   const bpm = getBpm();
   const { beats } = rhythmToTimestamps(CALIB_PATTERN, bpm);
 
+  // Match each expected beat to the nearest input event and collect offsets
   const offsets = [];
   beats.forEach((beat) => {
     let nearest = null;
@@ -565,6 +589,7 @@ function setState(newState) {
   clapIndicator.classList.toggle("hidden", !isActive);
   beatLabel.classList.toggle("hidden",     !isActive);
   clapLabel.classList.toggle("hidden",     !isActive);
+  // Show spacebar hint only in spacebar mode while active
   if (spacebarHint) spacebarHint.classList.toggle("hidden", !(isActive && inputMode === "space"));
 
   resultsSection.style.display =
