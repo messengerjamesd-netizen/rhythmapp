@@ -4,6 +4,8 @@ import { RHYTHM_LIBRARY } from "./rhythmLibrary.js";
 import { gradeLabel } from "./analysisEngine.js";
 import { renderStaff } from "./staffRenderer.js";
 
+export { gradeLabel };
+
 // ── Rhythm selector (categories + tabs) ──────────────────────────────────────
 
 let _staffCanvas = null;
@@ -14,7 +16,7 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
 
   const categories = Object.keys(RHYTHM_LIBRARY);
 
-  // Tab bar
+  // Tab bar + random button wrapper
   const tabBar = document.createElement("div");
   tabBar.className = "category-tabs";
 
@@ -22,7 +24,7 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
   const panelWrap = document.createElement("div");
   panelWrap.className = "category-panels";
 
-  let firstBtn  = null;
+  let firstTab  = null;
   let firstPanel = null;
 
   categories.forEach((cat) => {
@@ -45,7 +47,6 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
       btn.textContent = rhythm.name;
       btn.dataset.name = rhythm.name;
       btn.addEventListener("click", () => {
-        // Deselect all rhythm buttons
         container.querySelectorAll(".rhythm-btn").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         onChange(rhythm);
@@ -56,23 +57,56 @@ export function buildRhythmSelector(container, staffCanvas, onChange) {
     panelWrap.appendChild(panel);
 
     tab.addEventListener("click", () => {
-      // Switch active tab
       tabBar.querySelectorAll(".cat-tab").forEach((t) => t.classList.remove("active"));
       tab.classList.add("active");
       panelWrap.querySelectorAll(".cat-panel").forEach((p) => { p.hidden = true; });
       panel.hidden = false;
     });
 
-    if (!firstBtn) { firstBtn = tab; firstPanel = panel; }
+    if (!firstTab) { firstTab = tab; firstPanel = panel; }
   });
+
+  // Random button — always picks from the active (visible) panel
+  const actions = document.createElement("div");
+  actions.className = "selector-actions";
+  const randomBtn = document.createElement("button");
+  randomBtn.className = "random-btn";
+  randomBtn.textContent = "🎲 Random";
+  randomBtn.title = "Pick a random rhythm from this category";
+  randomBtn.addEventListener("click", () => {
+    const activePanel = panelWrap.querySelector(".cat-panel:not([hidden])");
+    if (!activePanel) return;
+    const btns = activePanel.querySelectorAll(".rhythm-btn");
+    if (!btns.length) return;
+    btns[Math.floor(Math.random() * btns.length)].click();
+  });
+  actions.appendChild(randomBtn);
+  tabBar.appendChild(actions);
 
   container.appendChild(tabBar);
   container.appendChild(panelWrap);
 
   // Activate first tab and first rhythm
-  firstBtn.classList.add("active");
+  firstTab.classList.add("active");
   firstPanel.hidden = false;
   firstPanel.querySelector(".rhythm-btn").click();
+}
+
+// Programmatically select a rhythm by name (used by daily challenge)
+export function selectRhythmByName(container, name) {
+  const btn = Array.from(container.querySelectorAll(".rhythm-btn"))
+                   .find((b) => b.dataset.name === name);
+  if (!btn) return;
+
+  // Activate the tab that owns this button
+  const panel = btn.closest(".cat-panel");
+  const cat   = panel?.dataset.cat;
+  if (cat) {
+    const tab = Array.from(container.querySelectorAll(".cat-tab"))
+                     .find((t) => t.dataset.cat === cat);
+    if (tab) tab.click(); // activates tab + shows panel
+  }
+  btn.click(); // selects rhythm + fires onChange
 }
 
 // ── Staff notation rendering ──────────────────────────────────────────────────
@@ -206,6 +240,40 @@ export function renderResults(container, analysis, totalDurationMs) {
     extra.textContent = `${extraClaps.length} extra clap(s) detected that didn't match an expected beat.`;
     container.appendChild(extra);
   }
+}
+
+// ── Leaderboard rendering ─────────────────────────────────────────────────────
+
+export function renderLeaderboard(container, entries) {
+  container.innerHTML = "";
+  if (!entries.length) {
+    const p = document.createElement("p");
+    p.className = "leaderboard-empty";
+    p.textContent = "No scores yet — attempt today's challenge!";
+    container.appendChild(p);
+    return;
+  }
+
+  entries.slice(0, 10).forEach((entry, i) => {
+    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+    const div = document.createElement("div");
+    div.className = "leaderboard-entry";
+    div.innerHTML = `
+      <span class="lb-rank ${i < 3 ? "top" : ""}">${medal}</span>
+      <span class="lb-name">${esc(entry.name)}</span>
+      <span class="lb-score">${entry.score}%</span>
+      <span class="lb-grade">${gradeLabel(entry.score)}</span>
+    `;
+    container.appendChild(div);
+  });
+}
+
+function esc(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function drawTimeline(canvas, results, extraClaps, totalMs) {
