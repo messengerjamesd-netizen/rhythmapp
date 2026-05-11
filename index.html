@@ -66,6 +66,21 @@
     <div id="rhythm-selector"></div>
   </section>
 
+  <!-- ── Daily Challenge ── -->
+  <section id="challenge-section">
+    <h2>Daily Challenge</h2>
+    <div class="challenge-header">
+      <div class="challenge-meta">
+        <span class="challenge-date" id="challenge-date"></span>
+        <span class="challenge-rhythm-name" id="challenge-rhythm-name">Loading…</span>
+        <span class="challenge-difficulty" id="challenge-difficulty"></span>
+      </div>
+      <button id="challenge-btn" class="btn btn-primary">🏆 Attempt Challenge</button>
+    </div>
+    <p class="leaderboard-title">Today's Leaderboard <span style="font-weight:400;font-size:0.7em;color:#4b5563">(local — scores saved on this device)</span></p>
+    <div id="leaderboard-list"></div>
+  </section>
+
   <!-- ── Notation + visualization ── -->
   <section>
     <h2>Notation</h2>
@@ -95,6 +110,14 @@
   <section id="results-section" style="display:none">
     <h2>Your Results</h2>
     <div id="results"></div>
+    <!-- Shown after a challenge attempt -->
+    <div id="challenge-submit-wrap" style="display:none">
+      <div class="challenge-submit">
+        <p class="challenge-submit-label">🏆 Submit your score to today's leaderboard:</p>
+        <input type="text" id="lb-name-input" placeholder="Your name" maxlength="30" autocomplete="off" />
+        <button id="lb-submit-btn" class="btn btn-secondary">Submit</button>
+      </div>
+    </div>
   </section>
 
 </main>

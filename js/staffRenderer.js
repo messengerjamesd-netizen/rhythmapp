@@ -9,12 +9,14 @@ const HEAD_TILT = -0.2; // radians; gives notes the traditional left-leaning ova
 const STEM_H = 3.5 * LS;// stem height in px
 const BEAM_W = 4;       // beam thickness px
 const BEAM_GAP = 3;     // gap between double beams (sixteenth)
-const NOTE_COLOR = "#dde8f8";
-const STAFF_COLOR = "#6a7f96";
-const CLEF_COLOR = "#8aafd0";
+const NOTE_COLOR   = "#dde8f8";
+const STAFF_COLOR  = "#6a7f96";
+const CLEF_COLOR   = "#8aafd0";
+const CANVAS_BG    = "#151821"; // matches .staff-wrap background
 
-// Beamable if duration <= 0.5 (eighth or shorter)
-const isBeamable = (d) => d <= 0.5;
+// Beamable if duration <= 0.5 (eighth or shorter), OR dotted eighth (0.75) which
+// conventionally beams to an adjacent sixteenth to complete the beat.
+const isBeamable = (d) => d <= 0.5 || Math.abs(d - 0.75) < 0.001;
 
 // Known dotted durations and their base values
 const DOTTED = new Map([
@@ -154,13 +156,16 @@ export function renderStaff(canvas, pattern, timeSig = { beats: 4, value: 4 }) {
     // Primary beam (all groups — eighths and shorter)
     ctx.fillRect(x0, stemTipY, xN - x0 + 1, BEAM_W);
 
-    // Secondary beam for any sixteenth-duration notes in the group
+    // Secondary beam for sixteenth-or-shorter notes in the group.
+    // Also draws a stub beam connecting a dotted-eighth to its paired sixteenth.
     const hasSixteenth = group.some((p) => p.event.duration <= 0.25);
     if (hasSixteenth) {
-      // Draw secondary beams per-note segment to handle mixed eighth/sixteenth groups
       for (let i = 0; i < group.length; i++) {
-        if (group[i].event.duration > 0.25) continue; // skip eighths
+        const dur = group[i].event.duration;
+        // Skip plain eighths (0.5) — they only carry the primary beam
+        if (Math.abs(dur - 0.5) < 0.001) continue;
         const segX0 = group[i].xCenter + NRX;
+        // Connect to next note, or draw a short stub at the end of the group
         const segX1 = i < group.length - 1 ? group[i + 1].xCenter + NRX : segX0 + 10;
         ctx.fillRect(segX0, stemTipY + BEAM_W + BEAM_GAP, segX1 - segX0 + 1, BEAM_W);
       }
@@ -251,7 +256,7 @@ function drawNote(ctx, cx, noteY, duration, isBeamed, staffTop) {
     ctx.ellipse(cx, noteY, NRX + 2, NRY, HEAD_TILT, 0, Math.PI * 2);
     ctx.stroke();
     // Inner cutout to distinguish from half note
-    ctx.fillStyle = "#1a1d27"; // match --surface color
+    ctx.fillStyle = CANVAS_BG;
     ctx.beginPath();
     ctx.ellipse(cx + 1, noteY, NRX - 1, NRY - 1.5, HEAD_TILT, 0, Math.PI * 2);
     ctx.fill();

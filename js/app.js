@@ -1,12 +1,13 @@
 // app.js — state machine and module wiring
 
-import { rhythmToTimestamps, totalBeats } from "./rhythmEngine.js";
+import { rhythmToTimestamps, totalBeats, RHYTHM_LIBRARY } from "./rhythmEngine.js";
 import { TimingEngine }   from "./timingEngine.js";
 import { AudioInput }     from "./audioInput.js";
 import { PlaybackEngine } from "./playback.js";
 import { analyzePerformance } from "./analysisEngine.js";
 import {
   buildRhythmSelector,
+  selectRhythmByName,
   updateStaff,
   renderBlocks,
   flashBeat,
@@ -15,6 +16,8 @@ import {
   showCountdown,
   clearCountdown,
   renderResults,
+  renderLeaderboard,
+  gradeLabel,
 } from "./ui.js";
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -40,6 +43,10 @@ let clapTimestamps      = [];
 let sequenceStartMs     = null;
 let lastAnalysis        = null;
 let lastTotalDurationMs = 0;
+
+// Challenge mode — set when the user attempts the daily challenge
+let isChallengeMode = false;
+let dailyChallenge  = null; // set on init
 
 // Per-mode latency offsets — each input type has its own timing characteristics.
 // Positive value means input registers late; we subtract it from timestamps.
@@ -87,16 +94,30 @@ const resultsEl       = document.getElementById("results");
 const thresholdSlider = document.getElementById("threshold-slider");
 const thresholdVal    = document.getElementById("threshold-val");
 
+// Challenge DOM
+const challengeBtn        = document.getElementById("challenge-btn");
+const challengeDateEl     = document.getElementById("challenge-date");
+const challengeNameEl     = document.getElementById("challenge-rhythm-name");
+const challengeDiffEl     = document.getElementById("challenge-difficulty");
+const leaderboardListEl   = document.getElementById("leaderboard-list");
+const challengeSubmitWrap = document.getElementById("challenge-submit-wrap");
+const lbNameInput         = document.getElementById("lb-name-input");
+const lbSubmitBtn         = document.getElementById("lb-submit-btn");
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 buildRhythmSelector(rhythmSel, staffCanvas, (rhythm) => {
   currentRhythm = rhythm;
   updateStaff(rhythm.pattern, rhythm.timeSig);
   renderBlocks(blockViz, rhythm.pattern, getBpm());
-  resultsEl.innerHTML    = "";
+  resultsEl.innerHTML          = "";
   resultsSection.style.display = "none";
   playbackBtn.style.display    = "none";
+  challengeSubmitWrap.style.display = "none";
+  isChallengeMode = false;
 });
+
+initChallenge();
 
 bpmInput.addEventListener("input", () => {
   if (currentRhythm) renderBlocks(blockViz, currentRhythm.pattern, getBpm());
@@ -135,6 +156,88 @@ applyInputMode(); // restore saved mode on load
 window.addEventListener("resize", () => {
   if (currentRhythm) updateStaff(currentRhythm.pattern, currentRhythm.timeSig);
 });
+
+// ── Daily challenge helpers ───────────────────────────────────────────────────
+
+function getDailyChallengeRhythm() {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  let hash = 0;
+  for (let i = 0; i < dateStr.length; i++) {
+    hash = ((hash << 5) - hash + dateStr.charCodeAt(i)) | 0;
+  }
+  // Pull from Intermediate + Advanced only
+  const pool = [
+    ...(RHYTHM_LIBRARY["Intermediate"] || []),
+    ...(RHYTHM_LIBRARY["Advanced"]     || []),
+  ];
+  return pool[Math.abs(hash) % pool.length];
+}
+
+function todayKey() {
+  const n = new Date();
+  return `rhythmapp_challenge_${n.getFullYear()}-${n.getMonth()}-${n.getDate()}`;
+}
+
+function loadLeaderboard() {
+  try { return JSON.parse(localStorage.getItem(todayKey()) || "[]"); }
+  catch { return []; }
+}
+
+function saveScore(name, score) {
+  const entries = loadLeaderboard();
+  entries.push({ name: name.trim() || "Anonymous", score });
+  entries.sort((a, b) => b.score - a.score);
+  localStorage.setItem(todayKey(), JSON.stringify(entries.slice(0, 20)));
+  return entries;
+}
+
+function initChallenge() {
+  dailyChallenge = getDailyChallengeRhythm();
+
+  // Determine which category this rhythm belongs to
+  let diffLabel = "";
+  for (const [cat, rhythms] of Object.entries(RHYTHM_LIBRARY)) {
+    if (rhythms.some((r) => r.name === dailyChallenge.name)) { diffLabel = cat; break; }
+  }
+
+  const today = new Date();
+  challengeDateEl.textContent  = today.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  challengeNameEl.textContent  = dailyChallenge.name;
+  challengeDiffEl.textContent  = diffLabel;
+
+  renderLeaderboard(leaderboardListEl, loadLeaderboard());
+}
+
+// ── Challenge attempt ─────────────────────────────────────────────────────────
+
+challengeBtn.addEventListener("click", async () => {
+  if (state !== STATE.IDLE && state !== STATE.RESULTS) return;
+
+  // Select the challenge rhythm in the picker and update notation
+  selectRhythmByName(rhythmSel, dailyChallenge.name);
+  currentRhythm = dailyChallenge;
+  updateStaff(currentRhythm.pattern, currentRhythm.timeSig);
+  renderBlocks(blockViz, currentRhythm.pattern, getBpm());
+
+  // Clear any previous challenge submit form
+  challengeSubmitWrap.style.display = "none";
+  isChallengeMode = true;
+
+  await onStartClick();
+});
+
+lbSubmitBtn.addEventListener("click", () => {
+  const name    = lbNameInput.value;
+  const entries = saveScore(name, lastAnalysis.accuracy);
+  renderLeaderboard(leaderboardListEl, entries);
+  challengeSubmitWrap.style.display = "none";
+  lbNameInput.value = "";
+  // Scroll to leaderboard
+  document.getElementById("challenge-section").scrollIntoView({ behavior: "smooth" });
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 function getBpm() {
   return Math.max(20, Math.min(300, parseInt(bpmInput.value, 10) || 80));
@@ -192,6 +295,11 @@ async function onStartClick() {
   }
   if (state === STATE.PLAYBACK) stopPlayback();
 
+  if (!currentRhythm) {
+    setStatus(statusEl, "Please select a rhythm first.", "error");
+    return;
+  }
+
   ensureAudioCtx();
 
   if (inputMode === "mic") {
@@ -202,6 +310,7 @@ async function onStartClick() {
     } catch {
       setStatus(statusEl, "Microphone access denied — please allow mic access and try again.", "error");
       setState(STATE.IDLE);
+      isChallengeMode = false;
       return;
     }
   }
@@ -334,6 +443,12 @@ function finishRecording() {
   setState(STATE.RESULTS);
   renderResults(resultsEl, lastAnalysis, lastTotalDurationMs);
   playbackBtn.style.display = "";
+
+  if (isChallengeMode) {
+    isChallengeMode = false;
+    challengeSubmitWrap.style.display = "";
+    lbNameInput.focus();
+  }
 }
 
 // ── Calibration ───────────────────────────────────────────────────────────────
