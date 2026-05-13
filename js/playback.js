@@ -14,6 +14,7 @@ export class PlaybackEngine {
   play(pattern, bpm, onDone) {
     this.stop();
     this._playing = true;
+    this._scheduledGains = [];
 
     const msPerBeat = (60 / bpm) * 1000;
     const ctx = this.audioCtx;
@@ -44,6 +45,7 @@ export class PlaybackEngine {
         osc.start(eventStart);
         osc.stop(eventStart + noteDur + 0.01);
         this._scheduled.push(osc);
+        this._scheduledGains.push(gain);
 
         lastEventEnd = Math.max(lastEventEnd, eventStart + noteDur);
       }
@@ -67,6 +69,7 @@ export class PlaybackEngine {
       try { osc.stop(); } catch (_) {}
     });
     this._scheduled = [];
+    this._scheduledGains = [];
     if (this._timer) {
       clearTimeout(this._timer);
       this._timer = null;
