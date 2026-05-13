@@ -490,6 +490,30 @@ kbd {
   color: var(--muted);
 }
 
+.calibrate-tip {
+  font-size: 0.88rem;
+  color: var(--text);
+  background: var(--surface2);
+  border-left: 3px solid var(--accent);
+  padding: 8px 12px;
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 14px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-btn:hover { color: var(--accent2); }
+
 .leaderboard-title {
   font-size: 0.76rem;
   font-weight: 600;
@@ -540,19 +564,13 @@ kbd {
   margin-bottom: 4px;
 }
 
-.challenge-submit input[type="text"] {
-  background: var(--surface2);
-  border: 1px solid #3a3d55;
-  color: var(--text);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 0.95rem;
-  flex: 1;
-  min-width: 160px;
-  max-width: 280px;
-  outline: none;
+.lb-name-reveal {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: var(--accent);
+  font-weight: 600;
 }
-.challenge-submit input[type="text"]:focus { border-color: var(--accent); }
 
 /* ── Responsive ───────────────────────────────────────────────── */
 @media (max-width: 600px) {

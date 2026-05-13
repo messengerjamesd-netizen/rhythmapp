@@ -42,8 +42,8 @@
           <span class="hint">(lower = more sensitive)</span>
         </label>
         <div class="slider-row">
-          <input type="range" id="threshold-slider" min="0.05" max="0.8" step="0.01" value="0.25" />
-          <span id="threshold-val">0.25</span>
+          <input type="range" id="threshold-slider" min="0.05" max="0.8" step="0.01" value="0.15" />
+          <span id="threshold-val">0.15</span>
         </div>
       </div>
 
@@ -69,6 +69,7 @@
   <!-- ── Daily Challenge ── -->
   <section id="challenge-section">
     <h2>Daily Challenge</h2>
+    <p class="calibrate-tip">💡 <strong>Tip:</strong> For the best score, <button class="link-btn" id="challenge-calibrate-btn">calibrate your mic</button> before attempting the challenge.</p>
     <div class="challenge-header">
       <div class="challenge-meta">
         <span class="challenge-date" id="challenge-date"></span>
@@ -77,7 +78,7 @@
       </div>
       <button id="challenge-btn" class="btn btn-primary">🏆 Attempt Challenge</button>
     </div>
-    <p class="leaderboard-title">Today's Leaderboard <span style="font-weight:400;font-size:0.7em;color:#4b5563">(local — scores saved on this device)</span></p>
+    <p class="leaderboard-title">Today's Leaderboard</p>
     <div id="leaderboard-list"></div>
   </section>
 
@@ -85,16 +86,13 @@
   <section>
     <h2>Notation</h2>
 
-    <!-- Staff canvas — fills the section width -->
     <div class="staff-wrap">
       <canvas id="staff-canvas"></canvas>
     </div>
 
-    <!-- Beat blocks — proportional-width colored bars as a quick reference -->
     <div class="blocks-label">Beat map</div>
     <div id="rhythm-blocks"></div>
 
-    <!-- Countdown and live indicators -->
     <div id="countdown"></div>
 
     <div class="indicators">
@@ -114,8 +112,8 @@
     <div id="challenge-submit-wrap" style="display:none">
       <div class="challenge-submit">
         <p class="challenge-submit-label">🏆 Submit your score to today's leaderboard:</p>
-        <input type="text" id="lb-name-input" placeholder="Your name" maxlength="30" autocomplete="off" />
-        <button id="lb-submit-btn" class="btn btn-secondary">Submit</button>
+        <button id="lb-submit-btn" class="btn btn-secondary">Submit Score</button>
+        <p id="lb-name-reveal" class="lb-name-reveal" style="display:none"></p>
       </div>
     </div>
   </section>

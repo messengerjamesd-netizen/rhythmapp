@@ -223,18 +223,13 @@ export const RHYTHM_LIBRARY = {
       ],
     },
     {
-      // 3+3+2 feel (clave-like): three eighths, three eighths, two eighths
+      // 3+3+2 clave feel: eighth-note groupings of 3+3+2 = dotted quarter + dotted quarter + quarter
       name: "3+3+2 Feel",
       timeSig: { beats: 4, value: 4 },
       pattern: [
-        { type: "note", duration: 0.5 },
-        { type: "note", duration: 0.5 },
-        { type: "note", duration: 0.5 },
-        { type: "note", duration: 0.5 },
-        { type: "note", duration: 0.5 },
-        { type: "note", duration: 0.5 },
-        { type: "note", duration: 0.5 },
-        { type: "note", duration: 0.5 },
+        { type: "note", duration: 1.5 },
+        { type: "note", duration: 1.5 },
+        { type: "note", duration: 1 },
       ],
     },
   ],

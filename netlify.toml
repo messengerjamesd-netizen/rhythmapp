@@ -1,9 +1,11 @@
 [build]
+  command = "npm install"
   publish = "."
-  # No build command — pure static site
+
+[functions]
+  directory = "netlify/functions"
 
 [[headers]]
   for = "/*"
   [headers.values]
-    # Required for microphone access on the live site
     Permissions-Policy = "microphone=(*)"

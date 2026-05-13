@@ -27,6 +27,7 @@ export class TimingEngine {
     this._scheduleInterval = 25; // ms between scheduler runs
     this._nextBeat = 0;
     this._notifiedBeats = new Set();
+    this._clickNodes = [];       // keep JS refs so GC doesn't collect audio nodes
 
     this._schedule();
   }
@@ -39,6 +40,13 @@ export class TimingEngine {
     }
     this._scheduledBeats = [];
     this._notifiedBeats = new Set();
+    if (this._clickNodes) {
+      this._clickNodes.forEach(({ osc, gain }) => {
+        try { osc.stop(); } catch (_) {}
+        try { osc.disconnect(); gain.disconnect(); } catch (_) {}
+      });
+      this._clickNodes = [];
+    }
   }
 
   _schedule() {
@@ -84,10 +92,12 @@ export class TimingEngine {
     gain.connect(ctx.destination);
 
     osc.frequency.value = isAccent ? 1000 : 800;
-    gain.gain.setValueAtTime(isAccent ? 0.4 : 0.25, audioTime);
+    gain.gain.setValueAtTime(isAccent ? 0.5 : 0.4, audioTime);
     gain.gain.exponentialRampToValueAtTime(0.001, audioTime + 0.05);
 
     osc.start(audioTime);
     osc.stop(audioTime + 0.06);
+
+    this._clickNodes.push({ osc, gain });
   }
 }

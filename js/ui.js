@@ -2,7 +2,7 @@
 
 import { RHYTHM_LIBRARY } from "./rhythmLibrary.js";
 import { gradeLabel } from "./analysisEngine.js";
-import { renderStaff } from "./staffRenderer.js";
+import { renderStaff, bravuraReady } from "./staffRenderer.js";
 
 export { gradeLabel };
 
@@ -111,10 +111,22 @@ export function selectRhythmByName(container, name) {
 
 // ── Staff notation rendering ──────────────────────────────────────────────────
 
+let _lastPattern = null;
+let _lastTimeSig = null;
+
 export function updateStaff(pattern, timeSig) {
+  _lastPattern = pattern;
+  _lastTimeSig = timeSig;
   if (!_staffCanvas) return;
   renderStaff(_staffCanvas, pattern, timeSig);
 }
+
+// Re-render once Bravura loads so rests use the proper glyph
+bravuraReady.then(() => {
+  if (_staffCanvas && _lastPattern) {
+    renderStaff(_staffCanvas, _lastPattern, _lastTimeSig);
+  }
+});
 
 // ── Beat block visualization (kept as secondary reference below staff) ────────
 
@@ -139,19 +151,20 @@ export function renderBlocks(container, pattern, bpm) {
 }
 
 function durationLabel(beats) {
-  if (beats === 4)    return "𝅝";
-  if (beats === 2)    return "𝅗𝅥";
+  if (beats === 4)    return "\u{1D15D}";
+  if (beats === 2)    return "\u{1D15E}";
   if (beats === 1)    return "♩";
   if (beats === 1.5)  return "♩.";
   if (beats === 0.75) return "♪.";
   if (beats === 0.5)  return "♪";
-  if (beats === 0.25) return "𝅘𝅥𝅯";
+  if (beats === 0.25) return "\u{1D160}";
   return beats;
 }
 
 // ── Metronome beat flash ──────────────────────────────────────────────────────
 
 export function flashBeat(indicatorEl) {
+  if (!indicatorEl) return;
   indicatorEl.classList.remove("flash");
   void indicatorEl.offsetWidth;
   indicatorEl.classList.add("flash");
@@ -160,6 +173,7 @@ export function flashBeat(indicatorEl) {
 // ── Clap indicator ────────────────────────────────────────────────────────────
 
 export function flashClap(el) {
+  if (!el) return;
   el.classList.remove("clap-flash");
   void el.offsetWidth;
   el.classList.add("clap-flash");
@@ -255,15 +269,15 @@ export function renderLeaderboard(container, entries) {
   }
 
   entries.slice(0, 10).forEach((entry, i) => {
-    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : (i + 1) + ".";
     const div = document.createElement("div");
     div.className = "leaderboard-entry";
-    div.innerHTML = `
-      <span class="lb-rank ${i < 3 ? "top" : ""}">${medal}</span>
-      <span class="lb-name">${esc(entry.name)}</span>
-      <span class="lb-score">${entry.score}%</span>
-      <span class="lb-grade">${gradeLabel(entry.score)}</span>
-    `;
+    const rankClass = i < 3 ? "lb-rank top" : "lb-rank";
+    div.innerHTML =
+      '<span class="' + rankClass + '">' + medal + '</span>' +
+      '<span class="lb-name">' + esc(entry.name) + '</span>' +
+      '<span class="lb-score">' + entry.score + '%</span>' +
+      '<span class="lb-grade">' + gradeLabel(entry.score) + '</span>';
     container.appendChild(div);
   });
 }
@@ -301,8 +315,7 @@ function drawTimeline(canvas, results, extraClaps, totalMs) {
   ctx.lineTo(W - 10, H / 2);
   ctx.stroke();
 
-  // Tolerance bands — each note uses its own per-note tolerance so bands
-  // never overlap even for dense sixteenth-note patterns
+  // Tolerance bands
   results.forEach((r) => {
     const x    = toX(r.expected);
     const tolW = (r.tolerance / totalMs) * usableW;
