@@ -164,6 +164,7 @@ function durationLabel(beats) {
 // ── Metronome beat flash ──────────────────────────────────────────────────────
 
 export function flashBeat(indicatorEl) {
+  if (!indicatorEl) return;
   indicatorEl.classList.remove("flash");
   void indicatorEl.offsetWidth;
   indicatorEl.classList.add("flash");
@@ -172,6 +173,7 @@ export function flashBeat(indicatorEl) {
 // ── Clap indicator ────────────────────────────────────────────────────────────
 
 export function flashClap(el) {
+  if (!el) return;
   el.classList.remove("clap-flash");
   void el.offsetWidth;
   el.classList.add("clap-flash");

@@ -53,6 +53,7 @@ let dailyChallenge  = null; // set on init
 let micOffsetMs   = parseFloat(localStorage.getItem("rhythmapp_offset")       || "0");
 let spaceOffsetMs = parseFloat(localStorage.getItem("rhythmapp_space_offset") || "0");
 let isCalibrating = false;
+let recordingTimeoutId = null;
 
 const CALIB_PATTERN = [
   { type: "note", duration: 1 },
@@ -163,7 +164,7 @@ window.addEventListener("resize", () => {
 
 function getDailyChallengeRhythm() {
   const now = new Date();
-  const dateStr = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   let hash = 0;
   for (let i = 0; i < dateStr.length; i++) {
     hash = ((hash << 5) - hash + dateStr.charCodeAt(i)) | 0;
@@ -172,6 +173,7 @@ function getDailyChallengeRhythm() {
     ...(RHYTHM_LIBRARY["Intermediate"] || []),
     ...(RHYTHM_LIBRARY["Advanced"]     || []),
   ];
+  if (!pool.length) return Object.values(RHYTHM_LIBRARY).find(a => a.length)?.[0];
   return pool[Math.abs(hash) % pool.length];
 }
 
@@ -421,12 +423,13 @@ function startRecording(rhythmStartAudio, rhythmStartPerf) {
     activeTimeSig.beats
   );
 
-  setTimeout(() => {
+  recordingTimeoutId = setTimeout(() => {
     if (state === STATE.RECORDING || state === STATE.CALIBRATING) finishRecording();
   }, totalDuration + 600);
 }
 
 function finishRecording() {
+  if (recordingTimeoutId) { clearTimeout(recordingTimeoutId); recordingTimeoutId = null; }
   if (inputMode === "mic" && audioInput) audioInput.stop();
   timingEngine.stop();
 

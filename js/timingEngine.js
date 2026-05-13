@@ -41,7 +41,10 @@ export class TimingEngine {
     this._scheduledBeats = [];
     this._notifiedBeats = new Set();
     if (this._clickNodes) {
-      this._clickNodes.forEach(({ osc }) => { try { osc.stop(); } catch (_) {} });
+      this._clickNodes.forEach(({ osc, gain }) => {
+        try { osc.stop(); } catch (_) {}
+        try { osc.disconnect(); gain.disconnect(); } catch (_) {}
+      });
       this._clickNodes = [];
     }
   }

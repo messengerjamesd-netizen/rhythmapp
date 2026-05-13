@@ -66,7 +66,10 @@ export class PlaybackEngine {
   stop() {
     this._playing = false;
     this._scheduled.forEach((osc) => {
-      try { osc.stop(); } catch (_) {}
+      try { osc.stop(); osc.disconnect(); } catch (_) {}
+    });
+    this._scheduledGains.forEach((gain) => {
+      try { gain.disconnect(); } catch (_) {}
     });
     this._scheduled = [];
     this._scheduledGains = [];
